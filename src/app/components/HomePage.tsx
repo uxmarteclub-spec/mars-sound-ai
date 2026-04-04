@@ -27,7 +27,7 @@ function PlayingBars() {
 function CreatorCard({ creator }: { creator: HomeCreator }) {
   return (
     <article
-      className="relative flex-none w-[140px] sm:w-[160px] lg:w-[175px] h-[220px] sm:h-[250px] lg:h-[279px] overflow-hidden cursor-pointer group"
+      className="relative flex-none snap-start w-[140px] sm:w-[160px] lg:w-[175px] h-[220px] sm:h-[250px] lg:h-[279px] overflow-hidden cursor-pointer group"
       style={{ border: "1px solid var(--color-border-subtle)" }}
     >
       {/* Background image */}
@@ -110,9 +110,10 @@ function MusicCard({
     }
   };
 
-  const cardWidth = size === "large"
-    ? "min-w-[260px] sm:min-w-[300px] lg:min-w-[340px]"
-    : "w-[140px] sm:w-[160px] lg:w-[175px] flex-none";
+  const cardWidth =
+    size === "large"
+      ? "flex-none min-w-[260px] sm:min-w-[300px] lg:min-w-[340px]"
+      : "w-[140px] sm:w-[160px] lg:w-[175px] flex-none";
 
   const imgHeight = size === "large"
     ? "h-[150px] sm:h-[160px] lg:h-[175px]"
@@ -120,11 +121,10 @@ function MusicCard({
 
   return (
     <article
-      className={`relative flex flex-col cursor-pointer group ${cardWidth}`}
+      className={`relative flex flex-col snap-start cursor-pointer group ${cardWidth}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onClick={handleClick}
-      style={size === "large" ? { flex: "1 1 0" } : {}}
     >
       {/* Image area */}
       <div
@@ -188,6 +188,39 @@ function MusicCard({
   );
 }
 
+function CarouselSkeleton({ tallImage }: { tallImage?: boolean }) {
+  const h = tallImage
+    ? "h-[150px] sm:h-[160px] lg:h-[175px]"
+    : "h-[140px] sm:h-[155px] lg:h-[175px]";
+  return (
+    <>
+      {[0, 1, 2, 3].map((i) => (
+        <div
+          key={i}
+          className="flex-none snap-start w-[140px] sm:w-[160px] lg:w-[175px] flex flex-col gap-2 animate-pulse"
+        >
+          <div className={`${h} w-full rounded-md bg-white/10`} />
+          <div className="h-3.5 w-3/4 rounded bg-white/10" />
+          <div className="h-3 w-1/2 rounded bg-white/5" />
+        </div>
+      ))}
+    </>
+  );
+}
+
+function CreatorRowSkeleton() {
+  return (
+    <>
+      {[0, 1, 2, 3].map((i) => (
+        <div
+          key={i}
+          className="flex-none snap-start w-[140px] sm:w-[160px] lg:w-[175px] h-[220px] sm:h-[250px] lg:h-[279px] rounded-md bg-white/10 animate-pulse"
+        />
+      ))}
+    </>
+  );
+}
+
 function SectionHeader({
   title,
   onVerTudo,
@@ -231,7 +264,7 @@ export function HomePage({ onNavigateToDiscover }: HomePageProps) {
     homeRecentes,
     homeDestaques,
     homeCreators,
-    libraryLoading,
+    homeFeedLoading,
     libraryError,
     refreshLibrary,
   } = useLibrary();
@@ -254,16 +287,15 @@ export function HomePage({ onNavigateToDiscover }: HomePageProps) {
             </button>
           </div>
         ) : null}
-        {libraryLoading ? (
-          <p className="text-sm text-[#a19a9b]">A carregar conteúdo…</p>
-        ) : null}
         <section>
           <h2 className="text-lg sm:text-xl lg:text-[24px] font-semibold text-white mb-4 lg:mb-[16px]">
             Top criadores
           </h2>
-          <div className="overflow-x-auto scrollbar-hide -mx-4 sm:-mx-6 lg:mx-0">
+          <div className="overflow-x-auto scrollbar-hide snap-x snap-mandatory -mx-4 sm:-mx-6 lg:mx-0">
             <div className="flex gap-4 lg:gap-[16px] px-4 sm:px-6 lg:px-0">
-              {homeCreators.length === 0 && !libraryLoading ? (
+              {homeFeedLoading ? (
+                <CreatorRowSkeleton />
+              ) : homeCreators.length === 0 ? (
                 <p className="text-sm text-[#a19a9b] py-4">
                   Ainda não há criadores públicos na plataforma.
                 </p>
@@ -276,9 +308,11 @@ export function HomePage({ onNavigateToDiscover }: HomePageProps) {
 
         <section>
           <SectionHeader title="Em alta agora" onVerTudo={onNavigateToDiscover} />
-          <div className="overflow-x-auto scrollbar-hide -mx-4 sm:-mx-6 lg:mx-0">
+          <div className="overflow-x-auto scrollbar-hide snap-x snap-mandatory -mx-4 sm:-mx-6 lg:mx-0">
             <div className="flex gap-4 lg:gap-[16px] px-4 sm:px-6 lg:px-0">
-              {homeEmAlta.length === 0 ? (
+              {homeFeedLoading ? (
+                <CarouselSkeleton />
+              ) : homeEmAlta.length === 0 ? (
                 <p className="text-sm text-[#a19a9b] py-4">
                   Ainda não há faixas em destaque. Explore Descobrir ou publique uma música.
                 </p>
@@ -293,9 +327,11 @@ export function HomePage({ onNavigateToDiscover }: HomePageProps) {
 
         <section>
           <SectionHeader title="Lançamentos recentes" onVerTudo={onNavigateToDiscover} />
-          <div className="overflow-x-auto scrollbar-hide -mx-4 sm:-mx-6 lg:mx-0">
+          <div className="overflow-x-auto scrollbar-hide snap-x snap-mandatory -mx-4 sm:-mx-6 lg:mx-0">
             <div className="flex gap-4 lg:gap-[16px] px-4 sm:px-6 lg:px-0">
-              {homeRecentes.length === 0 ? (
+              {homeFeedLoading ? (
+                <CarouselSkeleton />
+              ) : homeRecentes.length === 0 ? (
                 <p className="text-sm text-[#a19a9b] py-4">Sem lançamentos recentes.</p>
               ) : (
                 homeRecentes.map((t) => (
@@ -308,9 +344,11 @@ export function HomePage({ onNavigateToDiscover }: HomePageProps) {
 
         <section>
           <SectionHeader title="Destaques da semana" onVerTudo={onNavigateToDiscover} />
-          <div className="overflow-x-auto scrollbar-hide -mx-4 sm:-mx-6 lg:mx-0">
+          <div className="overflow-x-auto scrollbar-hide snap-x snap-mandatory -mx-4 sm:-mx-6 lg:mx-0">
             <div className="flex gap-4 lg:gap-[16px] px-4 sm:px-6 lg:px-0">
-              {homeDestaques.length === 0 ? (
+              {homeFeedLoading ? (
+                <CarouselSkeleton tallImage />
+              ) : homeDestaques.length === 0 ? (
                 <p className="text-sm text-[#a19a9b] py-4">Sem dados de reprodução esta semana.</p>
               ) : (
                 homeDestaques.map((t) => (

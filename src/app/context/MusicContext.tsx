@@ -16,6 +16,43 @@ export type { Track } from "../../types/music";
 
 export type RepeatMode = "off" | "one" | "all";
 
+const PLAYER_STORAGE_KEY = "mars-sound-player-state";
+const PERSIST_DEBOUNCE_MS = 900;
+
+type PersistedPlayerV1 = {
+  v: 1;
+  track: Track;
+  queue: Track[];
+  currentIndex: number;
+  positionSeconds: number;
+  volume: number;
+  updatedAt: number;
+};
+
+function writePersistSnapshot(p: PersistedPlayerV1) {
+  try {
+    localStorage.setItem(PLAYER_STORAGE_KEY, JSON.stringify(p));
+  } catch {
+    /* quota / modo privado */
+  }
+}
+
+function readPersistedPlayer(): PersistedPlayerV1 | null {
+  try {
+    const raw = localStorage.getItem(PLAYER_STORAGE_KEY);
+    if (!raw) return null;
+    const o = JSON.parse(raw) as PersistedPlayerV1;
+    if (o.v !== 1 || !o.track?.audioUrl) return null;
+    const q = Array.isArray(o.queue)
+      ? o.queue.filter((x) => x && typeof x.audioUrl === "string")
+      : [];
+    if (q.length === 0) return null;
+    return { ...o, queue: q };
+  } catch {
+    return null;
+  }
+}
+
 function shuffleTracks(tracks: Track[]): Track[] {
   const arr = [...tracks];
   for (let i = arr.length - 1; i > 0; i--) {
@@ -80,14 +117,107 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const currentTrackRef = useRef<Track | null>(null);
   const repeatModeRef = useRef<RepeatMode>("off");
   const shuffleOnRef = useRef(false);
+  const volumeRef = useRef(70);
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Evita persistir com refs antigos durante a hidratação inicial do player. */
+  const suppressPersistRef = useRef(false);
+  const didRestoreFromStorageRef = useRef(false);
 
   queueRef.current = queue;
   currentIndexRef.current = currentIndex;
   currentTrackRef.current = currentTrack;
   repeatModeRef.current = repeatMode;
   shuffleOnRef.current = shuffleOn;
+  volumeRef.current = volume;
 
   const isFavorite = currentTrack ? isFavId(currentTrack.id) : false;
+
+  const flushPersist = useCallback(() => {
+    if (suppressPersistRef.current) return;
+    const t = currentTrackRef.current;
+    const audio = audioRef.current;
+    if (!t?.audioUrl) return;
+    const pos =
+      audio && Number.isFinite(audio.currentTime) && audio.currentTime >= 0
+        ? audio.currentTime
+        : 0;
+    writePersistSnapshot({
+      v: 1,
+      track: t,
+      queue: queueRef.current,
+      currentIndex: currentIndexRef.current,
+      positionSeconds: pos,
+      volume: volumeRef.current,
+      updatedAt: Date.now(),
+    });
+  }, []);
+
+  const schedulePersist = useCallback(() => {
+    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    persistTimerRef.current = setTimeout(() => {
+      persistTimerRef.current = null;
+      flushPersist();
+    }, PERSIST_DEBOUNCE_MS);
+  }, [flushPersist]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || didRestoreFromStorageRef.current) return;
+    const saved = readPersistedPlayer();
+    if (!saved) return;
+    didRestoreFromStorageRef.current = true;
+    suppressPersistRef.current = true;
+    const idx = Math.min(
+      Math.max(0, saved.currentIndex),
+      saved.queue.length - 1
+    );
+    const track = saved.queue[idx];
+    if (!track?.audioUrl) {
+      suppressPersistRef.current = false;
+      return;
+    }
+    setQueue(saved.queue);
+    setCurrentTrack(track);
+    setCurrentIndex(idx);
+    setIsPlaying(false);
+    if (
+      typeof saved.volume === "number" &&
+      saved.volume >= 0 &&
+      saved.volume <= 100
+    ) {
+      setVolume(saved.volume);
+    }
+    setProgress(0);
+    const pos = saved.positionSeconds ?? 0;
+    audio.src = track.audioUrl;
+    const onMeta = () => {
+      const d = audio.duration;
+      if (Number.isFinite(d) && d > 0) {
+        const clamped = Math.min(Math.max(0, pos), Math.max(0, d - 0.25));
+        audio.currentTime = clamped;
+        setProgress((clamped / d) * 100);
+      }
+      suppressPersistRef.current = false;
+      audio.removeEventListener("loadedmetadata", onMeta);
+    };
+    const onHydrateErr = () => {
+      suppressPersistRef.current = false;
+    };
+    audio.addEventListener("loadedmetadata", onMeta);
+    audio.addEventListener("error", onHydrateErr, { once: true });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onUnload = () => flushPersist();
+    window.addEventListener("beforeunload", onUnload);
+    return () => window.removeEventListener("beforeunload", onUnload);
+  }, [flushPersist]);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -134,6 +264,15 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     });
     setIsPlaying(true);
     setProgress(0);
+    writePersistSnapshot({
+      v: 1,
+      track: t,
+      queue: q,
+      currentIndex: index,
+      positionSeconds: 0,
+      volume: volumeRef.current,
+      updatedAt: Date.now(),
+    });
     void notifyTrackPlaybackStarted(t.id);
   }, []);
 
@@ -144,7 +283,10 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const updateProgress = () => {
       const percent = (audio.currentTime / audio.duration) * 100;
       setProgress(isNaN(percent) ? 0 : percent);
+      schedulePersist();
     };
+
+    const onPausePersist = () => flushPersist();
 
     const handleEnded = () => {
       const q = queueRef.current;
@@ -172,6 +314,15 @@ export function MusicProvider({ children }: { children: ReactNode }) {
           audio.play().catch(() => {});
           setIsPlaying(true);
           setProgress(0);
+          writePersistSnapshot({
+            v: 1,
+            track: next,
+            queue: q,
+            currentIndex: nextIdx,
+            positionSeconds: 0,
+            volume: volumeRef.current,
+            updatedAt: Date.now(),
+          });
           void notifyTrackPlaybackStarted(next.id);
         }
         return;
@@ -180,25 +331,37 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       if (idx < q.length - 1) {
         const next = q[idx + 1];
         if (next) {
+          const nextIdx = idx + 1;
           setCurrentTrack(next);
-          setCurrentIndex(idx + 1);
+          setCurrentIndex(nextIdx);
           audio.src = next.audioUrl;
           audio.play().catch(() => {});
           setIsPlaying(true);
           setProgress(0);
+          writePersistSnapshot({
+            v: 1,
+            track: next,
+            queue: q,
+            currentIndex: nextIdx,
+            positionSeconds: 0,
+            volume: volumeRef.current,
+            updatedAt: Date.now(),
+          });
           void notifyTrackPlaybackStarted(next.id);
         }
       }
     };
 
     audio.addEventListener("timeupdate", updateProgress);
+    audio.addEventListener("pause", onPausePersist);
     audio.addEventListener("ended", handleEnded);
 
     return () => {
       audio.removeEventListener("timeupdate", updateProgress);
+      audio.removeEventListener("pause", onPausePersist);
       audio.removeEventListener("ended", handleEnded);
     };
-  }, []);
+  }, [flushPersist, schedulePersist]);
 
   const playTrack = useCallback((track: Track, newQueue?: Track[]) => {
     if (!audioRef.current) return;
@@ -219,6 +382,15 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     });
     setIsPlaying(true);
     setProgress(0);
+    writePersistSnapshot({
+      v: 1,
+      track: ordered[startIdx],
+      queue: ordered,
+      currentIndex: startIdx,
+      positionSeconds: 0,
+      volume: volumeRef.current,
+      updatedAt: Date.now(),
+    });
     void notifyTrackPlaybackStarted(ordered[startIdx].id);
   }, []);
 
@@ -233,13 +405,25 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     }
   }, [isPlaying]);
 
-  const handleSetProgress = useCallback((newProgress: number) => {
-    if (audioRef.current && audioRef.current.duration) {
-      const newTime = (newProgress / 100) * audioRef.current.duration;
-      audioRef.current.currentTime = newTime;
-      setProgress(newProgress);
-    }
-  }, []);
+  const handleSetProgress = useCallback(
+    (newProgress: number) => {
+      if (audioRef.current && audioRef.current.duration) {
+        const newTime = (newProgress / 100) * audioRef.current.duration;
+        audioRef.current.currentTime = newTime;
+        setProgress(newProgress);
+        flushPersist();
+      }
+    },
+    [flushPersist]
+  );
+
+  const handleSetVolume = useCallback(
+    (v: number) => {
+      setVolume(v);
+      schedulePersist();
+    },
+    [schedulePersist]
+  );
 
   const toggleMute = useCallback(() => {
     setIsMuted(!isMuted);
@@ -322,7 +506,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       playTrack,
       togglePlay,
       setProgress: handleSetProgress,
-      setVolume,
+      setVolume: handleSetVolume,
       toggleMute,
       toggleFavorite,
       toggleShuffle,
@@ -351,6 +535,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       playTrack,
       togglePlay,
       handleSetProgress,
+      handleSetVolume,
       toggleMute,
       toggleFavorite,
       toggleShuffle,

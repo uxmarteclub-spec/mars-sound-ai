@@ -4,8 +4,12 @@ import { Switch } from "./ui/switch";
 import { CategoryChip } from "./ui/CategoryChip";
 import { Button } from "./ui/button";
 import { useAuth } from "../context/AuthContext";
+import { useLibrary } from "../context/LibraryContext";
 import { getSupabase } from "../../lib/supabaseClient";
-import { fetchUserProfileRow } from "../../services/supabase/libraryData";
+import {
+  fetchUserProfileRow,
+  uploadUserAvatar,
+} from "../../services/supabase/libraryData";
 
 // ─── Sub-components ─────────────────────────────────────────────────
 
@@ -111,7 +115,8 @@ const MOODS = [
 ];
 
 function ProfileTab() {
-  const { user } = useAuth();
+  const { user, refreshProfile } = useAuth();
+  const { refreshLibrary } = useLibrary();
   const [profileLoading, setProfileLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [displayName, setDisplayName] = useState("");
@@ -120,8 +125,11 @@ function ProfileTab() {
   const [publicProfile, setPublicProfile] = useState(true);
   const [selectedGenres, setSelectedGenres] = useState<Set<string>>(new Set());
   const [selectedMoods, setSelectedMoods] = useState<Set<string>>(new Set());
+  /** Pré-visualização: URL remota ou blob: após escolher ficheiro. */
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingAvatarFileRef = useRef<File | null>(null);
+  const localPreviewUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!user?.id) {
@@ -145,6 +153,17 @@ function ProfileTab() {
         setPublicProfile(row.is_public);
         setSelectedGenres(new Set(row.favorite_genres ?? []));
         setSelectedMoods(new Set(row.favorite_moods ?? []));
+        const av = row.avatar?.trim();
+        if (av) {
+          if (localPreviewUrlRef.current) {
+            URL.revokeObjectURL(localPreviewUrlRef.current);
+            localPreviewUrlRef.current = null;
+          }
+          pendingAvatarFileRef.current = null;
+          setAvatarUrl(av);
+        } else if (!pendingAvatarFileRef.current) {
+          setAvatarUrl(null);
+        }
       })
       .catch(() => {
         toast.error("Não foi possível carregar o perfil da conta.");
@@ -174,18 +193,36 @@ function ProfileTab() {
     }
     setSaving(true);
     try {
-      const { error } = await sb
-        .from("users")
-        .update({
-          name: displayName.trim(),
-          username: cleanUser,
-          bio: bio.trim() || null,
-          is_public: publicProfile,
-          favorite_genres: [...selectedGenres],
-          favorite_moods: [...selectedMoods],
-        })
-        .eq("id", user.id);
+      let newAvatarUrl: string | undefined;
+      const pending = pendingAvatarFileRef.current;
+      if (pending) {
+        newAvatarUrl = await uploadUserAvatar(sb, user.id, pending);
+      }
+
+      const payload: Record<string, unknown> = {
+        name: displayName.trim(),
+        username: cleanUser,
+        bio: bio.trim() || null,
+        is_public: publicProfile,
+        favorite_genres: [...selectedGenres],
+        favorite_moods: [...selectedMoods],
+      };
+      if (newAvatarUrl) payload.avatar = newAvatarUrl;
+
+      const { error } = await sb.from("users").update(payload).eq("id", user.id);
       if (error) throw error;
+
+      if (pending) {
+        pendingAvatarFileRef.current = null;
+        if (localPreviewUrlRef.current) {
+          URL.revokeObjectURL(localPreviewUrlRef.current);
+          localPreviewUrlRef.current = null;
+        }
+        setAvatarUrl(newAvatarUrl);
+        void refreshProfile();
+        void refreshLibrary();
+      }
+
       toast.success("Perfil guardado na conta.");
     } catch (e) {
       const msg =
@@ -216,10 +253,16 @@ function ProfileTab() {
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
-      setAvatarUrl(url);
+    if (!file) return;
+    if (localPreviewUrlRef.current) {
+      URL.revokeObjectURL(localPreviewUrlRef.current);
+      localPreviewUrlRef.current = null;
     }
+    pendingAvatarFileRef.current = file;
+    const url = URL.createObjectURL(file);
+    localPreviewUrlRef.current = url;
+    setAvatarUrl(url);
+    e.target.value = "";
   }
 
   if (profileLoading) {

@@ -7,6 +7,20 @@ import { useAuth } from "../context/AuthContext";
 
 type AuthView = "login" | "register" | "forgot-request" | "forgot-success" | "forgot-reset";
 
+/** Imagem do painel esquerdo: Storage público (env) ou asset local de fallback. */
+function authBannerImageSrc(): string {
+  const direct = import.meta.env.VITE_AUTH_BANNER_URL?.trim();
+  if (direct) return direct;
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const base = typeof supabaseUrl === "string" ? supabaseUrl.trim().replace(/\/$/, "") : "";
+  const pathRaw = import.meta.env.VITE_AUTH_BANNER_STORAGE_PATH;
+  const path = typeof pathRaw === "string" ? pathRaw.trim().replace(/^\/+/, "") : "";
+  if (base && path) {
+    return `${base}/storage/v1/object/public/${path}`;
+  }
+  return imgBackground;
+}
+
 // Google "G" SVG icon
 function GoogleIcon() {
   return (
@@ -139,10 +153,10 @@ function AuthInput({
             fontWeight: 400,
             fontSize: "16px",
             lineHeight: "1.5",
-            color: "#f8f8f8",
+            color: "var(--color-text-primary)",
             boxSizing: "border-box",
           }}
-          className="placeholder-opacity-40 placeholder-[#f8f8f8]"
+          className="placeholder:text-[color:var(--color-text-muted)] placeholder:opacity-55"
         />
       </div>
     </div>
@@ -654,12 +668,13 @@ export function AuthPage() {
         className="hidden lg:flex lg:w-[60%] relative flex-col items-center justify-center"
         style={{ minHeight: "100vh" }}
       >
-        {/* Background image */}
+        {/* Background image (Supabase Storage `img-site` ou fallback Figma) */}
         <img
-          src={imgBackground}
-          alt="DJ background"
-          className="absolute inset-0 w-full h-full object-cover"
-          style={{ opacity: 1 }}
+          src={authBannerImageSrc()}
+          alt=""
+          className="absolute inset-0 size-full object-cover"
+          decoding="async"
+          fetchPriority="high"
         />
         {/* Dark overlay */}
         <div

@@ -1,5 +1,6 @@
 import imgImage20 from "figma:asset/88af55817e06e5beb26b97b8b37558d42203bf97.png";
 import svgPaths from "../../imports/svg-67owiawy17";
+import { useAuth } from "../context/AuthContext";
 
 function SearchIcon() {
   return (
@@ -33,6 +34,9 @@ export function Navbar({
   onAvatarClick,
   onUploadClick,
 }: NavbarProps) {
+  const { profileAvatarUrl } = useAuth();
+  const avatarSrc = profileAvatarUrl?.trim() || imgImage20;
+
   return (
     <header
       className="sticky top-0 z-30 flex items-center gap-3 px-4 lg:px-8"
@@ -123,7 +127,7 @@ export function Navbar({
             (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--color-border-subtle)";
           }}
         >
-          <img src={imgImage20} alt="Perfil" className="w-full h-full object-cover" />
+          <img src={avatarSrc} alt="Perfil" className="w-full h-full object-cover" />
         </button>
       </div>
     </header>

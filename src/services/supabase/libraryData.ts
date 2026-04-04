@@ -175,67 +175,63 @@ export async function addTrackToPlaylistRow(
   if (error) throw error;
 }
 
-export async function loadLibraryForUser(
+export type HomeFeedSnapshot = Pick<
+  LoadedLibrary,
+  "homeEmAlta" | "homeRecentes" | "homeDestaques" | "homeCreators"
+>;
+
+/** Dados só para a home: pedidos em paralelo e limites baixos. */
+export async function loadHomeFeed(
   sb: SupabaseClient,
-  userId: string
-): Promise<LoadedLibrary> {
-  const genres = await fetchGenres(sb);
-  const categoryNames = ["Todos", ...genres.map((g) => g.name)];
-
-  let homeCreators: HomeCreator[] = [];
-  try {
-    homeCreators = await fetchTopCreators(sb, 12);
-  } catch {
-    homeCreators = [];
-  }
-
-  const { data: published, error: pubErr } = await sb
+  _userId: string
+): Promise<HomeFeedSnapshot> {
+  const creatorsPromise = fetchTopCreators(sb, 12).catch(
+    () => [] as HomeCreator[]
+  );
+  const pubRecentPromise = sb
     .from("tracks")
     .select(TRACK_SELECT)
     .eq("status", "PUBLISHED")
-    .order("created_at", { ascending: false })
-    .limit(200);
-  if (pubErr) throw pubErr;
-
-  const { data: drafts, error: dErr } = await sb
+    .order("published_at", { ascending: false, nullsFirst: false })
+    .limit(72);
+  const pubTrendingPromise = sb
     .from("tracks")
     .select(TRACK_SELECT)
-    .eq("user_id", userId)
-    .eq("status", "DRAFT")
-    .order("updated_at", { ascending: false })
-    .limit(50);
-  if (dErr) throw dErr;
+    .eq("status", "PUBLISHED")
+    .order("play_count", { ascending: false })
+    .limit(72);
+  const weekRpcPromise = sb.rpc("get_top_tracks_this_week", {
+    limit_param: 12,
+  });
 
-  const pubRows = mapTrackRows(published);
-  const draftRows = mapTrackRows(drafts);
-  const seen = new Set<string>();
-  const mergedRows: TrackRow[] = [];
-  for (const r of [...draftRows, ...pubRows]) {
-    if (seen.has(r.id)) continue;
-    seen.add(r.id);
-    mergedRows.push(r);
-  }
+  const [homeCreators, pubRecentRes, pubTrendingRes, weekRpcRes] =
+    await Promise.all([
+      creatorsPromise,
+      pubRecentPromise,
+      pubTrendingPromise,
+      weekRpcPromise,
+    ]);
 
-  const discoverTracks = mergedRows.map(rowToDiscoverTrack);
+  if (pubRecentRes.error) throw pubRecentRes.error;
+  if (pubTrendingRes.error) throw pubTrendingRes.error;
+  if (weekRpcRes.error) throw weekRpcRes.error;
 
-  const byPlay = [...pubRows].sort(
-    (a, b) => (b.play_count ?? 0) - (a.play_count ?? 0)
-  );
-  const homeEmAlta = byPlay.slice(0, 12).map(rowToTrack);
+  const pubRecentRows = mapTrackRows(pubRecentRes.data);
+  const pubTrendingRows = mapTrackRows(pubTrendingRes.data);
 
-  const byRecent = [...pubRows].sort((a, b) => {
+  const byRecent = [...pubRecentRows].sort((a, b) => {
     const ta = new Date(a.published_at ?? a.created_at ?? 0).getTime();
     const tb = new Date(b.published_at ?? b.created_at ?? 0).getTime();
     return tb - ta;
   });
   const homeRecentes = byRecent.slice(0, 12).map(rowToTrack);
 
-  const { data: weekRpc, error: wErr } = await sb.rpc(
-    "get_top_tracks_this_week",
-    { limit_param: 12 }
+  const byPlay = [...pubTrendingRows].sort(
+    (a, b) => (b.play_count ?? 0) - (a.play_count ?? 0)
   );
-  if (wErr) throw wErr;
-  const weekIds = (weekRpc ?? []).map(
+  const homeEmAlta = byPlay.slice(0, 12).map(rowToTrack);
+
+  const weekIds = (weekRpcRes.data ?? []).map(
     (r: { id: string }) => r.id
   ) as string[];
   let homeDestaques: Track[] = [];
@@ -257,32 +253,101 @@ export async function loadLibraryForUser(
     homeDestaques = byPlay.slice(0, 8).map(rowToTrack);
   }
 
-  const { data: mine, error: mErr } = await sb
+  return {
+    homeEmAlta,
+    homeRecentes,
+    homeDestaques,
+    homeCreators,
+  };
+}
+
+export type LibraryRestSnapshot = Omit<LoadedLibrary, keyof HomeFeedSnapshot> & {
+  genres: GenreOption[];
+};
+
+/** Descobrir, playlists, histórico e géneros — em paralelo após o feed da home. */
+export async function loadLibraryRest(
+  sb: SupabaseClient,
+  userId: string
+): Promise<LibraryRestSnapshot> {
+  const genresPromise = fetchGenres(sb);
+  const publishedPromise = sb
+    .from("tracks")
+    .select(TRACK_SELECT)
+    .eq("status", "PUBLISHED")
+    .order("created_at", { ascending: false })
+    .limit(120);
+  const draftsPromise = sb
+    .from("tracks")
+    .select(TRACK_SELECT)
+    .eq("user_id", userId)
+    .eq("status", "DRAFT")
+    .order("updated_at", { ascending: false })
+    .limit(50);
+  const minePromise = sb
     .from("tracks")
     .select(TRACK_SELECT)
     .eq("user_id", userId)
     .eq("status", "PUBLISHED")
     .order("published_at", { ascending: false, nullsFirst: false })
     .limit(40);
-  if (mErr) throw mErr;
-  const myPublishedTracks = mapTrackRows(mine).map(rowToTrack);
-
-  const { data: plRows, error: plErr } = await sb
+  const playlistsPromise = sb
     .from("playlists")
     .select(
       "id, name, description, cover_image, visibility, track_count, total_duration"
     )
     .order("updated_at", { ascending: false });
-  if (plErr) throw plErr;
-  const playlists = (plRows ?? []).map(playlistRowToSummary);
-
-  const { data: ptRows, error: ptErr } = await sb
+  const ptPromise = sb
     .from("playlist_tracks")
-    .select(
-      `playlist_id, position, track:tracks(${TRACK_SELECT})`
-    )
+    .select(`playlist_id, position, track:tracks(${TRACK_SELECT})`)
     .order("position");
-  if (ptErr) throw ptErr;
+  const histPromise = sb
+    .from("play_history")
+    .select(`played_at, track:tracks(${TRACK_SELECT})`)
+    .eq("user_id", userId)
+    .order("played_at", { ascending: false })
+    .limit(24);
+
+  const [
+    genres,
+    pubRes,
+    draftsRes,
+    mineRes,
+    plRes,
+    ptRes,
+    histRes,
+  ] = await Promise.all([
+    genresPromise,
+    publishedPromise,
+    draftsPromise,
+    minePromise,
+    playlistsPromise,
+    ptPromise,
+    histPromise,
+  ]);
+
+  if (pubRes.error) throw pubRes.error;
+  if (draftsRes.error) throw draftsRes.error;
+  if (mineRes.error) throw mineRes.error;
+  if (plRes.error) throw plRes.error;
+  if (ptRes.error) throw ptRes.error;
+  if (histRes.error) throw histRes.error;
+
+  const categoryNames = ["Todos", ...genres.map((g) => g.name)];
+
+  const pubRows = mapTrackRows(pubRes.data);
+  const draftRows = mapTrackRows(draftsRes.data);
+  const seen = new Set<string>();
+  const mergedRows: TrackRow[] = [];
+  for (const r of [...draftRows, ...pubRows]) {
+    if (seen.has(r.id)) continue;
+    seen.add(r.id);
+    mergedRows.push(r);
+  }
+  const discoverTracks = mergedRows.map(rowToDiscoverTrack);
+
+  const myPublishedTracks = mapTrackRows(mineRes.data).map(rowToTrack);
+  const playlists = (plRes.data ?? []).map(playlistRowToSummary);
 
   const playlistTracksById: Record<string, Track[]> = {};
   for (const p of playlists) {
@@ -293,7 +358,7 @@ export async function loadLibraryForUser(
     position: number;
     track: TrackRow | TrackRow[] | null;
   };
-  const sortedPt = [...(ptRows ?? [])] as PtRow[];
+  const sortedPt = [...(ptRes.data ?? [])] as PtRow[];
   sortedPt.sort((a, b) => a.position - b.position);
   for (const row of sortedPt) {
     const tr = row.track;
@@ -306,15 +371,8 @@ export async function loadLibraryForUser(
     }
   }
 
-  const { data: hist, error: hErr } = await sb
-    .from("play_history")
-    .select(`played_at, track:tracks(${TRACK_SELECT})`)
-    .eq("user_id", userId)
-    .order("played_at", { ascending: false })
-    .limit(24);
-  if (hErr) throw hErr;
   const recentlyPlayed: Track[] = [];
-  const histList = (hist ?? []) as {
+  const histList = (histRes.data ?? []) as {
     track: TrackRow | TrackRow[] | null;
   }[];
   for (const h of histList) {
@@ -327,16 +385,26 @@ export async function loadLibraryForUser(
 
   return {
     discoverTracks,
-    homeEmAlta,
-    homeRecentes,
-    homeDestaques,
-    homeCreators,
     myPublishedTracks,
     playlists,
     playlistTracksById,
     recentlyPlayed,
     discoverCategories: categoryNames,
+    genres,
   };
+}
+
+/** Carga completa numa só chamada (ex.: testes ou refresh total). */
+export async function loadLibraryForUser(
+  sb: SupabaseClient,
+  userId: string
+): Promise<LoadedLibrary> {
+  const [home, rest] = await Promise.all([
+    loadHomeFeed(sb, userId),
+    loadLibraryRest(sb, userId),
+  ]);
+  const { genres: _g, ...restLib } = rest;
+  return { ...home, ...restLib };
 }
 
 export async function searchTracksRpc(
@@ -385,6 +453,28 @@ function extOf(file: File): string {
   const n = file.name.toLowerCase();
   if (n.endsWith(".wav")) return "wav";
   return "mp3";
+}
+
+const AVATAR_EXT = new Set(["jpg", "jpeg", "png", "webp", "gif"]);
+
+/** Upload para bucket `user-avatars` (path `userId/timestamp.ext`). */
+export async function uploadUserAvatar(
+  sb: SupabaseClient,
+  userId: string,
+  file: File
+): Promise<string> {
+  const raw = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
+  const ext = AVATAR_EXT.has(raw) ? raw : "jpg";
+  const path = `${userId}/${Date.now()}.${ext}`;
+  const { error } = await sb.storage.from("user-avatars").upload(path, file, {
+    cacheControl: "3600",
+    upsert: true,
+  });
+  if (error) throw error;
+  const {
+    data: { publicUrl },
+  } = sb.storage.from("user-avatars").getPublicUrl(path);
+  return publicUrl;
 }
 
 export async function uploadTrackWithStorage(params: {

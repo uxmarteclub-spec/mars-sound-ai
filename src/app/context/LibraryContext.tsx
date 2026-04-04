@@ -17,7 +17,8 @@ import {
   addTrackToPlaylistRow,
   deletePlaylistRow,
   insertPlaylist,
-  loadLibraryForUser,
+  loadHomeFeed,
+  loadLibraryRest,
   searchTracksRpc,
   updatePlaylistRow,
   uploadTrackWithStorage,
@@ -41,6 +42,9 @@ interface LibraryContextValue {
   playlistTracksById: Record<string, Track[]>;
   trackCatalog: Map<string, Track>;
   getTrackById: (id: string) => Track | undefined;
+  /** True enquanto o feed da home (criadores + carrosseis) ainda carrega. */
+  homeFeedLoading: boolean;
+  /** True enquanto descobrir, playlists e histórico ainda carregam. */
   libraryLoading: boolean;
   libraryError: string | null;
   refreshLibrary: () => Promise<void>;
@@ -70,6 +74,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     Record<string, Track[]>
   >({});
   const [recentlyPlayed, setRecentlyPlayed] = useState<Track[]>([]);
+  const [homeFeedLoading, setHomeFeedLoading] = useState(true);
   const [libraryLoading, setLibraryLoading] = useState(true);
   const [libraryError, setLibraryError] = useState<string | null>(null);
   const [genresCache, setGenresCache] = useState<Awaited<
@@ -83,33 +88,51 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     if (!user?.id) return;
     const sb = getSupabase();
     if (!sb) return;
+    setHomeFeedLoading(true);
     setLibraryLoading(true);
     setLibraryError(null);
     try {
-      const loaded = await loadLibraryForUser(sb, user.id);
-      setDiscoverTracks(loaded.discoverTracks);
-      setHomeEmAlta(loaded.homeEmAlta);
-      setHomeRecentes(loaded.homeRecentes);
-      setHomeDestaques(loaded.homeDestaques);
-      setHomeCreators(loaded.homeCreators);
-      setMyPublishedTracks(loaded.myPublishedTracks);
-      setPlaylists(loaded.playlists);
-      setPlaylistTracksById(loaded.playlistTracksById);
-      setRecentlyPlayed(loaded.recentlyPlayed);
-      setDiscoverCategoryOptions(loaded.discoverCategories);
-      const g = await fetchGenres(sb);
-      setGenresCache(g);
+      const home = await loadHomeFeed(sb, user.id);
+      setHomeEmAlta(home.homeEmAlta);
+      setHomeRecentes(home.homeRecentes);
+      setHomeDestaques(home.homeDestaques);
+      setHomeCreators(home.homeCreators);
+      setHomeFeedLoading(false);
+
+      await new Promise<void>((resolve, reject) => {
+        const run = () => {
+          void loadLibraryRest(sb, user.id)
+            .then((rest) => {
+              setDiscoverTracks(rest.discoverTracks);
+              setMyPublishedTracks(rest.myPublishedTracks);
+              setPlaylists(rest.playlists);
+              setPlaylistTracksById(rest.playlistTracksById);
+              setRecentlyPlayed(rest.recentlyPlayed);
+              setDiscoverCategoryOptions(rest.discoverCategories);
+              setGenresCache(rest.genres);
+              resolve();
+            })
+            .catch(reject);
+        };
+        if (typeof requestIdleCallback !== "undefined") {
+          requestIdleCallback(() => run(), { timeout: 2000 });
+        } else {
+          setTimeout(run, 0);
+        }
+      });
     } catch (e) {
       const msg =
         e instanceof Error ? e.message : "Não foi possível carregar os dados.";
       setLibraryError(msg);
     } finally {
+      setHomeFeedLoading(false);
       setLibraryLoading(false);
     }
   }, [user?.id]);
 
   useEffect(() => {
     if (!user?.id) {
+      setHomeFeedLoading(false);
       setLibraryLoading(false);
       return;
     }
@@ -283,6 +306,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       playlistTracksById,
       trackCatalog,
       getTrackById,
+      homeFeedLoading,
       libraryLoading,
       libraryError,
       refreshLibrary,
@@ -306,6 +330,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       playlistTracksById,
       trackCatalog,
       getTrackById,
+      homeFeedLoading,
       libraryLoading,
       libraryError,
       refreshLibrary,

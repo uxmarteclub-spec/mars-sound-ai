@@ -20,6 +20,10 @@ interface AuthContextValue {
   user: AuthUser | null;
   isAuthenticated: boolean;
   authHydrated: boolean;
+  /** URL pública do avatar em `users.avatar` (navbar, etc.). */
+  profileAvatarUrl: string | null;
+  /** Recarrega `users.avatar` do Supabase (ex.: após guardar perfil). */
+  refreshProfile: () => Promise<void>;
   /** True quando VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY estão definidos. */
   isBackendConfigured: boolean;
   signInWithPassword: (
@@ -56,7 +60,42 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const isBackendConfigured = isSupabaseConfigured();
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
   const [authHydrated, setAuthHydrated] = useState(!isBackendConfigured);
+
+  const fetchAvatarForUserId = useCallback(
+    async (userId: string | null) => {
+      if (!userId || !isBackendConfigured) {
+        setProfileAvatarUrl(null);
+        return;
+      }
+      const sb = getSupabase();
+      if (!sb) {
+        setProfileAvatarUrl(null);
+        return;
+      }
+      const { data } = await sb
+        .from("users")
+        .select("avatar")
+        .eq("id", userId)
+        .maybeSingle();
+      const url =
+        data &&
+        typeof (data as { avatar?: string | null }).avatar === "string"
+          ? (data as { avatar: string }).avatar.trim()
+          : "";
+      setProfileAvatarUrl(url || null);
+    },
+    [isBackendConfigured]
+  );
+
+  const refreshProfile = useCallback(async () => {
+    await fetchAvatarForUserId(user?.id ?? null);
+  }, [fetchAvatarForUserId, user?.id]);
+
+  useEffect(() => {
+    void fetchAvatarForUserId(user?.id ?? null);
+  }, [user?.id, fetchAvatarForUserId]);
 
   useEffect(() => {
     if (!isBackendConfigured) return;
@@ -140,6 +179,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const sb = getSupabase();
     await sb?.auth.signOut();
     setUser(null);
+    setProfileAvatarUrl(null);
   }, []);
 
   const resetPasswordForEmail = useCallback(
@@ -177,6 +217,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       isAuthenticated: user !== null,
       authHydrated,
+      profileAvatarUrl,
+      refreshProfile,
       isBackendConfigured,
       signInWithPassword,
       signUp,
@@ -187,6 +229,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [
       user,
       authHydrated,
+      profileAvatarUrl,
+      refreshProfile,
       isBackendConfigured,
       signInWithPassword,
       signUp,
