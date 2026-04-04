@@ -6,6 +6,7 @@ import type {
   Track,
 } from "../../types/music";
 import {
+  genreName,
   playlistRowToSummary,
   rowToDiscoverTrack,
   rowToTrack,
@@ -15,6 +16,65 @@ import {
 /** Colunas de faixa para PostgREST (uma linha para reutilizar em selects aninhados). */
 export const TRACK_SELECT =
   "id, title, artist, audio_url, image_url, duration, album, play_count, status, user_id, published_at, created_at, genre:genres(name)";
+
+/** Detalhe para edição pelo dono (género + metadados). */
+const TRACK_OWNER_DETAIL_SELECT =
+  "id, title, artist, audio_url, image_url, duration, album, play_count, status, user_id, published_at, created_at, genre_id, moods, ai_model, ai_prompt, genre:genres(name)";
+
+export type OwnerPublishedTrackDetail = {
+  id: string;
+  title: string;
+  audio_url: string;
+  image_url: string;
+  durationSeconds: number;
+  album: string | null;
+  genre_id: string;
+  moods: string[];
+  ai_model: string | null;
+  ai_prompt: string | null;
+  categoryName: string;
+};
+
+export async function fetchPublishedTrackDetailForOwner(
+  sb: SupabaseClient,
+  trackId: string
+): Promise<OwnerPublishedTrackDetail | null> {
+  const { data, error } = await sb
+    .from("tracks")
+    .select(TRACK_OWNER_DETAIL_SELECT)
+    .eq("id", trackId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const row = data as TrackRow;
+  const moods = Array.isArray(row.moods) ? row.moods : [];
+  const gid = row.genre_id?.trim();
+  if (!gid) return null;
+  return {
+    id: row.id,
+    title: row.title,
+    audio_url: row.audio_url,
+    image_url: row.image_url,
+    durationSeconds: row.duration,
+    album: row.album,
+    genre_id: gid,
+    moods,
+    ai_model: row.ai_model ?? null,
+    ai_prompt: row.ai_prompt ?? null,
+    categoryName: genreName(row.genre),
+  };
+}
+
+export type UpdatePublishedTrackCompleteParams = {
+  title: string;
+  album: string | null;
+  genreId: string;
+  moods: string[];
+  aiModel: string | null;
+  aiPrompt: string | null;
+  audioFile?: File | null;
+  coverFile?: File | null;
+};
 
 export type GenreOption = { id: string; name: string; slug: string };
 
@@ -868,21 +928,109 @@ export async function deletePublishedTrackForUser(
   }
 }
 
-/** Atualiza metadados da faixa (RLS: dono). */
-export async function updatePublishedTrackRow(
+/**
+ * Atualiza faixa publicada: metadados e, opcionalmente, novo áudio e/ou capa no Storage (RLS: dono).
+ */
+export async function updatePublishedTrackComplete(
   sb: SupabaseClient,
+  userId: string,
   trackId: string,
-  patch: { title: string; album: string | null }
+  currentAudioUrl: string,
+  currentImageUrl: string,
+  params: UpdatePublishedTrackCompleteParams
 ): Promise<Track> {
-  const title = patch.title.trim();
+  const title = params.title.trim();
   if (!title) throw new Error("Título inválido.");
+  const genreId = params.genreId.trim();
+  if (!genreId) throw new Error("Categoria inválida.");
+
+  let audioUrl = currentAudioUrl;
+  let imageUrl = currentImageUrl;
+  let durationPatch: number | undefined;
+  let fileSizePatch: number | undefined;
+  let formatPatch: string | undefined;
+
+  if (params.audioFile) {
+    const ts = Date.now();
+    const safeName = params.audioFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const audioPath = `${userId}/${ts}-${safeName}`;
+    const { error: aErr } = await sb.storage
+      .from("audio-tracks")
+      .upload(audioPath, params.audioFile, {
+        cacheControl: "3600",
+        upsert: false,
+      });
+    if (aErr) throw aErr;
+    const {
+      data: { publicUrl },
+    } = sb.storage.from("audio-tracks").getPublicUrl(audioPath);
+    audioUrl = publicUrl;
+    const d = await getAudioDurationSeconds(params.audioFile);
+    durationPatch = d > 0 ? d : 1;
+    fileSizePatch = params.audioFile.size;
+    formatPatch = extOf(params.audioFile);
+    const oldPath = extractPublicStorageObjectPath(
+      currentAudioUrl,
+      "audio-tracks"
+    );
+    if (oldPath) void sb.storage.from("audio-tracks").remove([oldPath]);
+  }
+
+  if (params.coverFile) {
+    const ts = Date.now();
+    const safeName = params.coverFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const coverPath = `${userId}/${ts}-cover-${safeName}`;
+    const { error: cErr } = await sb.storage
+      .from("track-covers")
+      .upload(coverPath, params.coverFile, {
+        cacheControl: "3600",
+        upsert: false,
+      });
+    if (cErr) throw cErr;
+    const {
+      data: { publicUrl },
+    } = sb.storage.from("track-covers").getPublicUrl(coverPath);
+    imageUrl = publicUrl;
+    const oldCover = extractPublicStorageObjectPath(
+      currentImageUrl,
+      "track-covers"
+    );
+    const skipOld =
+      !oldCover ||
+      currentImageUrl.includes("unsplash.com") ||
+      currentImageUrl.includes("images.unsplash.com");
+    if (oldCover && !skipOld) {
+      void sb.storage.from("track-covers").remove([oldCover]);
+    }
+  }
+
   const album =
-    patch.album?.trim() && patch.album.trim().length > 0
-      ? patch.album.trim()
+    params.album?.trim() && params.album.trim().length > 0
+      ? params.album.trim()
       : null;
+  const moods = params.moods.length
+    ? params.moods.map((m) => m.slice(0, 50))
+    : [];
+
+  const updatePayload: Record<string, unknown> = {
+    title,
+    album,
+    genre_id: genreId,
+    moods,
+    ai_model: params.aiModel?.trim() || null,
+    ai_prompt: params.aiPrompt?.trim() || null,
+    image_url: imageUrl,
+    audio_url: audioUrl,
+  };
+  if (params.audioFile && durationPatch !== undefined) {
+    updatePayload.duration = durationPatch;
+    updatePayload.file_size = fileSizePatch;
+    updatePayload.format = formatPatch;
+  }
+
   const { data, error } = await sb
     .from("tracks")
-    .update({ title, album })
+    .update(updatePayload)
     .eq("id", trackId)
     .select(TRACK_SELECT)
     .single();

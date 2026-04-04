@@ -16,9 +16,13 @@ export type TrackRow = {
   published_at?: string | null;
   created_at?: string | null;
   genre?: GenreRow;
+  genre_id?: string;
+  moods?: string[] | null;
+  ai_model?: string | null;
+  ai_prompt?: string | null;
 };
 
-function genreName(g: GenreRow): string {
+export function genreName(g: GenreRow): string {
   if (!g) return "Outros";
   const row = Array.isArray(g) ? g[0] : g;
   return row?.name?.trim() || "Outros";

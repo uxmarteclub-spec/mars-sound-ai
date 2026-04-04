@@ -26,7 +26,7 @@ import {
   uploadPlaylistCoverFile,
   uploadTrackWithStorage,
   deletePublishedTrackForUser,
-  updatePublishedTrackRow,
+  updatePublishedTrackComplete,
   fetchGenres,
   createGenreViaRpc,
   resolveGenreId,
@@ -71,11 +71,20 @@ interface LibraryContextValue {
   createGenre: (displayName: string) => Promise<string>;
   /** Apaga faixa publicada do utilizador (BD + Storage best-effort) e recarrega a biblioteca. */
   deletePublishedTrack: (track: Track) => Promise<void>;
-  /** Atualiza título/álbum da faixa publicada (RLS: dono). */
-  updatePublishedTrack: (
-    trackId: string,
-    patch: { title: string; album: string | null }
-  ) => Promise<void>;
+  /** Atualiza faixa publicada (metadados, capa e áudio opcionais). */
+  updatePublishedTrackFull: (input: {
+    trackId: string;
+    currentAudioUrl: string;
+    currentImageUrl: string;
+    title: string;
+    album: string | null;
+    category?: string;
+    tags?: string[];
+    aiGenerator?: string;
+    prompt?: string;
+    coverFile?: File | null;
+    audioFile?: File | null;
+  }) => Promise<void>;
 }
 
 const LibraryContext = createContext<LibraryContextValue | undefined>(
@@ -367,14 +376,50 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     [refreshLibrary]
   );
 
-  const updatePublishedTrack = useCallback(
-    async (trackId: string, patch: { title: string; album: string | null }) => {
+  const updatePublishedTrackFull = useCallback(
+    async (input: {
+      trackId: string;
+      currentAudioUrl: string;
+      currentImageUrl: string;
+      title: string;
+      album: string | null;
+      category?: string;
+      tags?: string[];
+      aiGenerator?: string;
+      prompt?: string;
+      coverFile?: File | null;
+      audioFile?: File | null;
+    }) => {
+      if (!user?.id) throw new Error("Sessão inválida");
       const sb = getSupabase();
       if (!sb) throw new Error("Cliente indisponível");
-      await updatePublishedTrackRow(sb, trackId, patch);
+      let g = genresCache;
+      if (!g?.length) {
+        g = await fetchGenres(sb);
+        setGenresCache(g);
+      }
+      const genreId = await resolveGenreId(sb, input.category, g);
+      if (!genreId) throw new Error("Categoria inválida");
+      await updatePublishedTrackComplete(
+        sb,
+        user.id,
+        input.trackId,
+        input.currentAudioUrl,
+        input.currentImageUrl,
+        {
+          title: input.title,
+          album: input.album,
+          genreId,
+          moods: input.tags ?? [],
+          aiModel: input.aiGenerator?.trim() || null,
+          aiPrompt: input.prompt?.trim() || null,
+          audioFile: input.audioFile ?? null,
+          coverFile: input.coverFile ?? null,
+        }
+      );
       await refreshLibrary();
     },
-    [refreshLibrary]
+    [user?.id, genresCache, refreshLibrary]
   );
 
   const appendUploadedTrack = useCallback(
@@ -440,7 +485,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       appendUploadedTrack,
       createGenre,
       deletePublishedTrack,
-      updatePublishedTrack,
+      updatePublishedTrackFull,
     }),
     [
       discoverTracks,
@@ -469,7 +514,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       appendUploadedTrack,
       createGenre,
       deletePublishedTrack,
-      updatePublishedTrack,
+      updatePublishedTrackFull,
     ]
   );
 
