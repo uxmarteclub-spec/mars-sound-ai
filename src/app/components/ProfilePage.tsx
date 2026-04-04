@@ -4,6 +4,7 @@ import { useMusicPlayer, Track } from "../context/MusicContext";
 import { useAuth } from "../context/AuthContext";
 import { TrackRow, TrackTableHeader } from "./ui/TrackRow";
 import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -179,7 +180,8 @@ export function ProfilePage({
   onBack,
 }: ProfilePageProps) {
   const { user: authUser } = useAuth();
-  const { myPublishedTracks, deletePublishedTrack } = useLibrary();
+  const { myPublishedTracks, deletePublishedTrack, updatePublishedTrack } =
+    useLibrary();
   const { removeFavoriteLocal } = useFavorites();
   const { playTrack, currentTrack, isPlaying } = useMusicPlayer();
 
@@ -210,6 +212,17 @@ export function ProfilePage({
     null
   );
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [trackEditing, setTrackEditing] = useState<Track | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editAlbum, setEditAlbum] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+
+  useEffect(() => {
+    if (trackEditing) {
+      setEditTitle(trackEditing.title);
+      setEditAlbum(trackEditing.album?.trim() ?? "");
+    }
+  }, [trackEditing]);
 
   const publishedTracks = useMemo(() => {
     if (!targetId || !authUser?.id) return [];
@@ -410,6 +423,28 @@ export function ProfilePage({
         toast.success("Posição do banner guardada.");
       })
       .finally(() => setSavingBannerPosition(false));
+  };
+
+  const handleSaveTrackEdit = () => {
+    if (!trackEditing) return;
+    const t = editTitle.trim();
+    if (!t) {
+      toast.error("O título é obrigatório.");
+      return;
+    }
+    setEditSaving(true);
+    void updatePublishedTrack(trackEditing.id, {
+      title: t,
+      album: editAlbum.trim() ? editAlbum.trim() : null,
+    })
+      .then(() => {
+        toast.success("Faixa atualizada.");
+        setTrackEditing(null);
+      })
+      .catch(() => {
+        toast.error("Não foi possível guardar as alterações.");
+      })
+      .finally(() => setEditSaving(false));
   };
 
   const displayName = profile?.name ?? "—";
@@ -671,7 +706,8 @@ export function ProfilePage({
             <table className="w-full">
               <TrackTableHeader
                 showFavorites={false}
-                showDeletePublished={!isOtherUser}
+                showAddToPlaylist={isOtherUser}
+                showOwnerTrackMenu={!isOtherUser}
               />
               <tbody>
                 {publishedTracks.map((track, index) => {
@@ -685,10 +721,15 @@ export function ProfilePage({
                       isPlaying={isTrackPlaying}
                       onClick={() => playTrack(track, publishedTracks)}
                       showFavorites={false}
-                      onRequestDeletePublished={
+                      showAddToPlaylist={isOtherUser}
+                      ownerTrackMenu={
                         isOtherUser
                           ? undefined
-                          : (t) => setTrackPendingDelete(t)
+                          : {
+                              onEdit: (t) => setTrackEditing(t),
+                              onRequestDelete: (t) =>
+                                setTrackPendingDelete(t),
+                            }
                       }
                     />
                   );
@@ -714,6 +755,71 @@ export function ProfilePage({
             onCancel={() => setRepositionOpen(false)}
             onSave={handleSaveBannerPosition}
           />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(trackEditing)}
+        onOpenChange={(open) => {
+          if (!open && !editSaving) setTrackEditing(null);
+        }}
+      >
+        <DialogContent className="border-[#30292b] bg-[#24191b] text-[#f8f8f8] sm:max-w-md [&_[data-slot=dialog-close]]:text-[#f8f8f8]">
+          <DialogHeader>
+            <DialogTitle className="text-[#ebe9e9]">Editar faixa</DialogTitle>
+            <DialogDescription className="text-[#bababa] text-sm">
+              Título e álbum visíveis no perfil e nas listagens.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-2">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="edit-track-title" className="text-xs text-[#bababa]">
+                Título
+              </label>
+              <Input
+                id="edit-track-title"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                className="border-[#30292b] bg-[#1a1214] text-[#f8f8f8] placeholder:text-[#716e6e] focus-visible:border-[#ff164c] focus-visible:ring-[#ff164c]/25"
+                placeholder="Título da faixa"
+                disabled={editSaving}
+                autoComplete="off"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="edit-track-album" className="text-xs text-[#bababa]">
+                Álbum (opcional)
+              </label>
+              <Input
+                id="edit-track-album"
+                value={editAlbum}
+                onChange={(e) => setEditAlbum(e.target.value)}
+                className="border-[#30292b] bg-[#1a1214] text-[#f8f8f8] placeholder:text-[#716e6e] focus-visible:border-[#ff164c] focus-visible:ring-[#ff164c]/25"
+                placeholder="Ex.: EP Verão 2026"
+                disabled={editSaving}
+                autoComplete="off"
+              />
+            </div>
+          </div>
+          <DialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              className="border-[#30292b] bg-transparent text-[#f8f8f8] hover:bg-white/5"
+              disabled={editSaving}
+              onClick={() => setTrackEditing(null)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              className="bg-[#ff164c] text-white hover:bg-[#d4103e]"
+              disabled={editSaving}
+              onClick={handleSaveTrackEdit}
+            >
+              {editSaving ? "A guardar…" : "Guardar"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

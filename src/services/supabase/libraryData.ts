@@ -656,6 +656,7 @@ export async function uploadTrackWithStorage(params: {
   aiModel?: string;
   aiPrompt?: string;
   publish: boolean;
+  album?: string | null;
 }): Promise<DiscoverTrack> {
   const {
     sb,
@@ -668,6 +669,7 @@ export async function uploadTrackWithStorage(params: {
     aiModel,
     aiPrompt,
     publish,
+    album,
   } = params;
 
   const ts = Date.now();
@@ -715,7 +717,7 @@ export async function uploadTrackWithStorage(params: {
       file_size: audioFile.size,
       format,
       artist: "Você",
-      album: null,
+      album: album?.trim() ? album.trim() : null,
       genre_id: genreId,
       moods: moods.length ? moods.map((m) => m.slice(0, 50)) : [],
       ai_model: aiModel?.trim() || null,
@@ -864,4 +866,26 @@ export async function deletePublishedTrackForUser(
   if (coverPath && !skipCover) {
     void sb.storage.from("track-covers").remove([coverPath]);
   }
+}
+
+/** Atualiza metadados da faixa (RLS: dono). */
+export async function updatePublishedTrackRow(
+  sb: SupabaseClient,
+  trackId: string,
+  patch: { title: string; album: string | null }
+): Promise<Track> {
+  const title = patch.title.trim();
+  if (!title) throw new Error("Título inválido.");
+  const album =
+    patch.album?.trim() && patch.album.trim().length > 0
+      ? patch.album.trim()
+      : null;
+  const { data, error } = await sb
+    .from("tracks")
+    .update({ title, album })
+    .eq("id", trackId)
+    .select(TRACK_SELECT)
+    .single();
+  if (error) throw error;
+  return rowToTrack(data as TrackRow);
 }

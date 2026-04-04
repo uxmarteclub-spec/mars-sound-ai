@@ -26,6 +26,7 @@ import {
   uploadPlaylistCoverFile,
   uploadTrackWithStorage,
   deletePublishedTrackForUser,
+  updatePublishedTrackRow,
   fetchGenres,
   createGenreViaRpc,
   resolveGenreId,
@@ -70,6 +71,11 @@ interface LibraryContextValue {
   createGenre: (displayName: string) => Promise<string>;
   /** Apaga faixa publicada do utilizador (BD + Storage best-effort) e recarrega a biblioteca. */
   deletePublishedTrack: (track: Track) => Promise<void>;
+  /** Atualiza título/álbum da faixa publicada (RLS: dono). */
+  updatePublishedTrack: (
+    trackId: string,
+    patch: { title: string; album: string | null }
+  ) => Promise<void>;
 }
 
 const LibraryContext = createContext<LibraryContextValue | undefined>(
@@ -361,6 +367,16 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     [refreshLibrary]
   );
 
+  const updatePublishedTrack = useCallback(
+    async (trackId: string, patch: { title: string; album: string | null }) => {
+      const sb = getSupabase();
+      if (!sb) throw new Error("Cliente indisponível");
+      await updatePublishedTrackRow(sb, trackId, patch);
+      await refreshLibrary();
+    },
+    [refreshLibrary]
+  );
+
   const appendUploadedTrack = useCallback(
     async (payload: UploadTrackPayload) => {
       if (!user?.id) throw new Error("Sessão inválida");
@@ -387,6 +403,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         aiModel: payload.aiGenerator,
         aiPrompt: payload.prompt,
         publish: true,
+        album: payload.album?.trim() ? payload.album.trim() : null,
       });
       await refreshLibrary();
       const { category: _c, ...asTrack } = row;
@@ -423,6 +440,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       appendUploadedTrack,
       createGenre,
       deletePublishedTrack,
+      updatePublishedTrack,
     }),
     [
       discoverTracks,
@@ -451,6 +469,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       appendUploadedTrack,
       createGenre,
       deletePublishedTrack,
+      updatePublishedTrack,
     ]
   );
 

@@ -32,7 +32,12 @@ function FieldError({ message }: { message: string }) {
 }
 
 export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
-  const { appendUploadedTrack, discoverCategories, createGenre } = useLibrary();
+  const {
+    appendUploadedTrack,
+    discoverCategories,
+    createGenre,
+    myPublishedTracks,
+  } = useLibrary();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Audio upload
@@ -49,6 +54,8 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
 
   // Form fields
   const [title, setTitle] = useState("");
+  const [albumPick, setAlbumPick] = useState("");
+  const [albumNewName, setAlbumNewName] = useState("");
   const [aiGenerator, setAiGenerator] = useState("");
   const [category, setCategory] = useState("");
   const [tags, setTags] = useState<string[]>([]);
@@ -68,6 +75,15 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
       ),
     [discoverCategories]
   );
+
+  const existingAlbumNames = useMemo(() => {
+    const s = new Set<string>();
+    for (const t of myPublishedTracks) {
+      const a = t.album?.trim();
+      if (a) s.add(a);
+    }
+    return [...s].sort((a, b) => a.localeCompare(b, "pt"));
+  }, [myPublishedTracks]);
 
   const handleCreateGenreUpload = useCallback(
     async (name: string) => {
@@ -162,8 +178,20 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
     if (Object.keys(newErrors).length > 0) return;
     setIsSubmitting(true);
     try {
+      let albumValue: string | undefined;
+      if (existingAlbumNames.length === 0) {
+        albumValue = albumNewName.trim() || undefined;
+      } else if (albumPick === "__new__") {
+        albumValue = albumNewName.trim() || undefined;
+      } else if (albumPick.trim()) {
+        albumValue = albumPick;
+      } else {
+        albumValue = undefined;
+      }
+
       await appendUploadedTrack({
         title: title.trim(),
+        album: albumValue ?? null,
         category: category || undefined,
         coverPreviewUrl: coverPreview,
         audioFile,
@@ -398,6 +426,77 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
                   />
                 </div>
                 {hasError("title") && <FieldError message={errors.title!} />}
+              </div>
+
+              {/* Álbum: texto livre na primeira vez; depois escolher existente ou criar novo */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[12px] leading-[1.25]" style={{ color: "#bababa" }}>
+                  Álbum (opcional)
+                </label>
+                {existingAlbumNames.length > 0 ? (
+                  <div className="flex flex-col gap-3">
+                    <div
+                      className="hover:border-[#ff164c]/50 transition-colors"
+                      style={{ border: "1px solid #30292b" }}
+                    >
+                      <select
+                        value={albumPick}
+                        onChange={(e) => {
+                          setAlbumPick(e.target.value);
+                          if (e.target.value !== "__new__") setAlbumNewName("");
+                        }}
+                        aria-label="Selecionar álbum existente ou criar novo"
+                        className="w-full bg-transparent px-6 py-2 font-semibold text-[16px] leading-[1.5] outline-none min-h-[44px] cursor-pointer appearance-none"
+                        style={{
+                          color: "#f8f8f8",
+                          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23bababa' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+                          backgroundRepeat: "no-repeat",
+                          backgroundPosition: "right 1rem center",
+                        }}
+                      >
+                        <option value="">Sem álbum</option>
+                        {existingAlbumNames.map((name) => (
+                          <option key={name} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                        <option value="__new__">Novo álbum…</option>
+                      </select>
+                    </div>
+                    {albumPick === "__new__" ? (
+                      <div
+                        className="hover:border-[#ff164c]/50 transition-colors"
+                        style={{ border: "1px solid #30292b" }}
+                      >
+                        <input
+                          type="text"
+                          value={albumNewName}
+                          onChange={(e) => setAlbumNewName(e.target.value)}
+                          placeholder="Nome do novo álbum"
+                          className="w-full bg-transparent px-6 py-2 font-semibold text-[16px] leading-[1.5] outline-none min-h-[44px]"
+                          style={{ color: "#f8f8f8", caretColor: "#ff164c" }}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div
+                    className="hover:border-[#ff164c]/50 transition-colors"
+                    style={{ border: "1px solid #30292b" }}
+                  >
+                    <input
+                      type="text"
+                      value={albumNewName}
+                      onChange={(e) => setAlbumNewName(e.target.value)}
+                      placeholder="Ex.: Singles 2026, EP Aurora…"
+                      className="w-full bg-transparent px-6 py-2 font-semibold text-[16px] leading-[1.5] outline-none min-h-[44px]"
+                      style={{ color: "#f8f8f8", caretColor: "#ff164c" }}
+                    />
+                  </div>
+                )}
+                <p className="text-[11px] leading-[1.25]" style={{ color: "#716e6e" }}>
+                  Nas próximas publicações pode reutilizar um álbum ou criar outro.
+                </p>
               </div>
 
               {/* Category + AI Generator */}

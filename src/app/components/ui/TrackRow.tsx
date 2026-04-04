@@ -1,11 +1,17 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { ListMinus, Trash2 } from "lucide-react";
+import { ListMinus, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import { Track } from "../../context/MusicContext";
 import { useFavorites } from "../../context/FavoritesContext";
 import { useLibrary } from "../../context/LibraryContext";
 import { FavoriteButton } from "./FavoriteButton";
 import { AddToPlaylistMenu } from "./AddToPlaylistMenu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
@@ -44,8 +50,11 @@ interface TrackRowProps {
   showAddToPlaylist?: boolean;
   /** Na página da playlist: mostra remover desta lista em vez de adicionar a outra. */
   playlistContextId?: string;
-  /** Perfil próprio: pedido de exclusão (confirmação fica no pai). */
-  onRequestDeletePublished?: (track: Track) => void;
+  /** Perfil próprio: menu ⋮ com editar / excluir (confirmações no pai). */
+  ownerTrackMenu?: {
+    onEdit: (track: Track) => void;
+    onRequestDelete: (track: Track) => void;
+  };
 }
 
 export function TrackRow({ 
@@ -58,7 +67,7 @@ export function TrackRow({
   showFavorites = true,
   showAddToPlaylist = true,
   playlistContextId,
-  onRequestDeletePublished,
+  ownerTrackMenu,
 }: TrackRowProps) {
   const { isFavorite: isFav, toggleFavorite } = useFavorites();
   const { removeTrackFromPlaylist } = useLibrary();
@@ -67,7 +76,7 @@ export function TrackRow({
   const favoriteActive = isFav(track.id);
 
   const showPlaylistActionsCol = Boolean(playlistContextId) || showAddToPlaylist;
-  const showDeleteCol = Boolean(onRequestDeletePublished);
+  const showOwnerMenuCol = Boolean(ownerTrackMenu);
 
   return (
     <tr
@@ -216,28 +225,48 @@ export function TrackRow({
         </td>
       )}
 
-      {showDeleteCol && onRequestDeletePublished && (
+      {showOwnerMenuCol && ownerTrackMenu && (
         <td className="px-4 py-4 w-14" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-center">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex">
-                  <button
-                    type="button"
-                    className="shrink-0 flex items-center justify-center w-9 h-9 rounded-md text-[#a19a9b] hover:text-[#ff164c] hover:bg-white/5 transition-colors"
-                    title="Excluir publicação"
-                    aria-label="Excluir publicação"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onRequestDeletePublished(track);
-                    }}
-                  >
-                    <Trash2 className="w-4 h-4" aria-hidden />
-                  </button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top">Excluir publicação</TooltipContent>
-            </Tooltip>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="shrink-0 flex items-center justify-center w-9 h-9 rounded-md text-[#a19a9b] hover:text-[#f8f8f8] hover:bg-white/5 transition-colors"
+                  title="Opções da faixa"
+                  aria-label="Opções da faixa"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MoreVertical className="w-4 h-4" aria-hidden />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="min-w-[10rem] border-[#30292b] bg-[#24191b] text-[#f8f8f8]"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <DropdownMenuItem
+                  className="cursor-pointer focus:bg-white/10"
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    ownerTrackMenu.onEdit(track);
+                  }}
+                >
+                  <Pencil className="mr-2 h-4 w-4 opacity-80" aria-hidden />
+                  Editar
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="cursor-pointer text-[#ff4d72] focus:bg-white/10 focus:text-[#ff4d72]"
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    ownerTrackMenu.onRequestDelete(track);
+                  }}
+                >
+                  <Trash2 className="mr-2 h-4 w-4 opacity-80" aria-hidden />
+                  Excluir
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </td>
       )}
@@ -252,7 +281,7 @@ interface TrackTableHeaderProps {
   showFavorites?: boolean;
   showAddToPlaylist?: boolean;
   playlistContextId?: string;
-  showDeletePublished?: boolean;
+  showOwnerTrackMenu?: boolean;
 }
 
 export function TrackTableHeader({
@@ -261,7 +290,7 @@ export function TrackTableHeader({
   showFavorites = true,
   showAddToPlaylist = true,
   playlistContextId,
-  showDeletePublished = false,
+  showOwnerTrackMenu = false,
 }: TrackTableHeaderProps) {
   const showPlaylistActionsCol = Boolean(playlistContextId) || showAddToPlaylist;
   return (
@@ -323,13 +352,13 @@ export function TrackTableHeader({
             </span>
           </th>
         )}
-        {showDeletePublished && (
-          <th className="px-4 py-3 text-center w-14">
+        {showOwnerTrackMenu && (
+          <th className="px-4 py-3 text-center w-14" aria-label="Opções">
             <span
               className="font-semibold text-[12px] uppercase tracking-wide"
               style={{ color: "#a19a9b" }}
             >
-              Excluir
+              ···
             </span>
           </th>
         )}
