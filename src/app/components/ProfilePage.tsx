@@ -12,6 +12,7 @@ import {
 } from "./ui/dropdown-menu";
 import { Upload, Move, Share2 } from "lucide-react";
 import { useLibrary } from "../context/LibraryContext";
+import { useFavorites } from "../context/FavoritesContext";
 import { getSupabase } from "../../lib/supabaseClient";
 import {
   fetchUserProfileRow,
@@ -33,6 +34,16 @@ import {
   DialogTitle,
 } from "./ui/dialog";
 import { ShareChannelsMenu } from "./ui/ShareChannelsMenu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "./ui/alert-dialog";
 
 import imgBanner from "figma:asset/1ff0fd371e6317f8995f6626691775855756bce5.png";
 import imgProfilePhoto from "figma:asset/2b9669d4caae7e0131df172e452df996b054e84b.png";
@@ -164,7 +175,8 @@ export function ProfilePage({
   onBack,
 }: ProfilePageProps) {
   const { user: authUser } = useAuth();
-  const { myPublishedTracks } = useLibrary();
+  const { myPublishedTracks, deletePublishedTrack } = useLibrary();
+  const { removeFavoriteLocal } = useFavorites();
   const { playTrack, currentTrack, isPlaying } = useMusicPlayer();
 
   const targetId = profileUserId ?? authUser?.id ?? null;
@@ -190,6 +202,10 @@ export function ProfilePage({
   const [savingBannerPosition, setSavingBannerPosition] = useState(false);
   const [bannerUploading, setBannerUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [trackPendingDelete, setTrackPendingDelete] = useState<Track | null>(
+    null
+  );
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const publishedTracks = useMemo(() => {
     if (!targetId || !authUser?.id) return [];
@@ -648,7 +664,10 @@ export function ProfilePage({
             </p>
           ) : (
             <table className="w-full">
-              <TrackTableHeader showFavorites={false} />
+              <TrackTableHeader
+                showFavorites={false}
+                showDeletePublished={!isOtherUser}
+              />
               <tbody>
                 {publishedTracks.map((track, index) => {
                   const isCurrentTrack = currentTrack?.id === track.id;
@@ -661,6 +680,11 @@ export function ProfilePage({
                       isPlaying={isTrackPlaying}
                       onClick={() => playTrack(track, publishedTracks)}
                       showFavorites={false}
+                      onRequestDeletePublished={
+                        isOtherUser
+                          ? undefined
+                          : (t) => setTrackPendingDelete(t)
+                      }
                     />
                   );
                 })}
@@ -687,6 +711,53 @@ export function ProfilePage({
           />
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={Boolean(trackPendingDelete)}
+        onOpenChange={(open) => {
+          if (!open && !deleteBusy) setTrackPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent className="border-[#30292b] bg-[#24191b] text-[#f8f8f8]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir publicação?</AlertDialogTitle>
+            <AlertDialogDescription className="text-[#bababa]">
+              A faixa &quot;{trackPendingDelete?.title ?? ""}&quot; será removida do catálogo,
+              playlists e favoritos. Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={deleteBusy}
+              className="border-[#30292b] bg-transparent text-[#f8f8f8]"
+            >
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleteBusy}
+              className="bg-[#ff164c] text-white hover:bg-[#d4103e]"
+              onClick={(e) => {
+                e.preventDefault();
+                const t = trackPendingDelete;
+                if (!t) return;
+                setDeleteBusy(true);
+                void deletePublishedTrack(t)
+                  .then(() => {
+                    removeFavoriteLocal(t.id);
+                    toast.success("Faixa eliminada.");
+                    setTrackPendingDelete(null);
+                  })
+                  .catch(() => {
+                    toast.error("Não foi possível eliminar a faixa.");
+                  })
+                  .finally(() => setDeleteBusy(false));
+              }}
+            >
+              {deleteBusy ? "A eliminar…" : "Excluir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -41,6 +41,8 @@ interface FavoritesContextValue {
   favoriteIds: ReadonlySet<string>;
   isFavorite: (trackId: string) => boolean;
   toggleFavorite: (trackId: string) => void;
+  /** Remove o id do estado local (ex.: faixa apagada; CASCADE já limpou a BD). */
+  removeFavoriteLocal: (trackId: string) => void;
 }
 
 const FavoritesContext = createContext<FavoritesContextValue | undefined>(
@@ -82,6 +84,20 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
   const isFavorite = useCallback(
     (trackId: string) => favoriteIds.has(trackId),
     [favoriteIds]
+  );
+
+  const removeFavoriteLocal = useCallback(
+    (trackId: string) => {
+      if (!user?.id) return;
+      setFavoriteIds((prev) => {
+        if (!prev.has(trackId)) return prev;
+        const next = new Set(prev);
+        next.delete(trackId);
+        saveIds(user.id, next);
+        return next;
+      });
+    },
+    [user?.id]
   );
 
   const toggleFavorite = useCallback(
@@ -134,8 +150,9 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
       favoriteIds,
       isFavorite,
       toggleFavorite,
+      removeFavoriteLocal,
     }),
-    [favoriteIds, isFavorite, toggleFavorite]
+    [favoriteIds, isFavorite, toggleFavorite, removeFavoriteLocal]
   );
 
   return (

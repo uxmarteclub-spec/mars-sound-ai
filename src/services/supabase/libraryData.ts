@@ -822,3 +822,46 @@ export async function deletePlaylistRow(sb: SupabaseClient, playlistId: string) 
   const { error } = await sb.from("playlists").delete().eq("id", playlistId);
   if (error) throw error;
 }
+
+function extractPublicStorageObjectPath(
+  publicUrl: string,
+  bucket: string
+): string | null {
+  const marker = `/object/public/${bucket}/`;
+  const i = publicUrl.indexOf(marker);
+  if (i === -1) return null;
+  try {
+    const rest = publicUrl.slice(i + marker.length);
+    const path = (rest.split("?")[0] ?? "").trim();
+    return path ? decodeURIComponent(path) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Apaga a faixa (RLS: dono). Depois tenta remover áudio/capa no Storage (best-effort).
+ */
+export async function deletePublishedTrackForUser(
+  sb: SupabaseClient,
+  trackId: string,
+  audioUrl: string,
+  imageUrl: string
+): Promise<void> {
+  const { error } = await sb.from("tracks").delete().eq("id", trackId);
+  if (error) throw error;
+
+  const audioPath = extractPublicStorageObjectPath(audioUrl, "audio-tracks");
+  const coverPath = extractPublicStorageObjectPath(imageUrl, "track-covers");
+  const skipCover =
+    !coverPath ||
+    imageUrl.includes("unsplash.com") ||
+    imageUrl.includes("images.unsplash.com");
+
+  if (audioPath) {
+    void sb.storage.from("audio-tracks").remove([audioPath]);
+  }
+  if (coverPath && !skipCover) {
+    void sb.storage.from("track-covers").remove([coverPath]);
+  }
+}

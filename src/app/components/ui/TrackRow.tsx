@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { ListMinus } from "lucide-react";
+import { ListMinus, Trash2 } from "lucide-react";
 import { Track } from "../../context/MusicContext";
 import { useFavorites } from "../../context/FavoritesContext";
 import { useLibrary } from "../../context/LibraryContext";
@@ -44,6 +44,8 @@ interface TrackRowProps {
   showAddToPlaylist?: boolean;
   /** Na página da playlist: mostra remover desta lista em vez de adicionar a outra. */
   playlistContextId?: string;
+  /** Perfil próprio: pedido de exclusão (confirmação fica no pai). */
+  onRequestDeletePublished?: (track: Track) => void;
 }
 
 export function TrackRow({ 
@@ -56,6 +58,7 @@ export function TrackRow({
   showFavorites = true,
   showAddToPlaylist = true,
   playlistContextId,
+  onRequestDeletePublished,
 }: TrackRowProps) {
   const { isFavorite: isFav, toggleFavorite } = useFavorites();
   const { removeTrackFromPlaylist } = useLibrary();
@@ -64,6 +67,7 @@ export function TrackRow({
   const favoriteActive = isFav(track.id);
 
   const showPlaylistActionsCol = Boolean(playlistContextId) || showAddToPlaylist;
+  const showDeleteCol = Boolean(onRequestDeletePublished);
 
   return (
     <tr
@@ -211,6 +215,32 @@ export function TrackRow({
           </div>
         </td>
       )}
+
+      {showDeleteCol && onRequestDeletePublished && (
+        <td className="px-4 py-4 w-14" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-center">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex">
+                  <button
+                    type="button"
+                    className="shrink-0 flex items-center justify-center w-9 h-9 rounded-md text-[#a19a9b] hover:text-[#ff164c] hover:bg-white/5 transition-colors"
+                    title="Excluir publicação"
+                    aria-label="Excluir publicação"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRequestDeletePublished(track);
+                    }}
+                  >
+                    <Trash2 className="w-4 h-4" aria-hidden />
+                  </button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">Excluir publicação</TooltipContent>
+            </Tooltip>
+          </div>
+        </td>
+      )}
     </tr>
   );
 }
@@ -222,6 +252,7 @@ interface TrackTableHeaderProps {
   showFavorites?: boolean;
   showAddToPlaylist?: boolean;
   playlistContextId?: string;
+  showDeletePublished?: boolean;
 }
 
 export function TrackTableHeader({
@@ -230,6 +261,7 @@ export function TrackTableHeader({
   showFavorites = true,
   showAddToPlaylist = true,
   playlistContextId,
+  showDeletePublished = false,
 }: TrackTableHeaderProps) {
   const showPlaylistActionsCol = Boolean(playlistContextId) || showAddToPlaylist;
   return (
@@ -288,6 +320,16 @@ export function TrackTableHeader({
               style={{ color: "#a19a9b" }}
             >
               Salvar
+            </span>
+          </th>
+        )}
+        {showDeletePublished && (
+          <th className="px-4 py-3 text-center w-14">
+            <span
+              className="font-semibold text-[12px] uppercase tracking-wide"
+              style={{ color: "#a19a9b" }}
+            >
+              Excluir
             </span>
           </th>
         )}

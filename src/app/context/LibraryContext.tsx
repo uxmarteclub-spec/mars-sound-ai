@@ -25,6 +25,7 @@ import {
   updatePlaylistRow,
   uploadPlaylistCoverFile,
   uploadTrackWithStorage,
+  deletePublishedTrackForUser,
   fetchGenres,
   createGenreViaRpc,
   resolveGenreId,
@@ -67,6 +68,8 @@ interface LibraryContextValue {
   appendUploadedTrack: (payload: UploadTrackPayload) => Promise<Track>;
   /** Cria género no Supabase e atualiza opções de categoria na UI. */
   createGenre: (displayName: string) => Promise<string>;
+  /** Apaga faixa publicada do utilizador (BD + Storage best-effort) e recarrega a biblioteca. */
+  deletePublishedTrack: (track: Track) => Promise<void>;
 }
 
 const LibraryContext = createContext<LibraryContextValue | undefined>(
@@ -343,6 +346,21 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     [refreshLibrary]
   );
 
+  const deletePublishedTrack = useCallback(
+    async (track: Track) => {
+      const sb = getSupabase();
+      if (!sb) throw new Error("Cliente indisponível");
+      await deletePublishedTrackForUser(
+        sb,
+        track.id,
+        track.audioUrl,
+        track.image
+      );
+      await refreshLibrary();
+    },
+    [refreshLibrary]
+  );
+
   const appendUploadedTrack = useCallback(
     async (payload: UploadTrackPayload) => {
       if (!user?.id) throw new Error("Sessão inválida");
@@ -404,6 +422,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       removeTrackFromPlaylist,
       appendUploadedTrack,
       createGenre,
+      deletePublishedTrack,
     }),
     [
       discoverTracks,
@@ -431,6 +450,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       removeTrackFromPlaylist,
       appendUploadedTrack,
       createGenre,
+      deletePublishedTrack,
     ]
   );
 
