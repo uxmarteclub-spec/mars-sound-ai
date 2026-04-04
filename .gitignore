@@ -1,0 +1,13 @@
+# Dependências e build
+node_modules/
+dist/
+
+# Ambiente — nunca commitar chaves reais
+.env
+.env.local
+.env.production
+.env.production.local
+.env.*.local
+
+# Supabase CLI (credenciais locais após `supabase link`)
+.supabase/
