@@ -16,6 +16,7 @@ import { getSupabase } from "../../lib/supabaseClient";
 import {
   fetchUserProfileRow,
   fetchPublishedTracksForUser,
+  uploadUserBanner,
   type PublicUserProfileRow,
 } from "../../services/supabase/libraryData";
 import { formatPlaylistDuration } from "../../services/supabase/mappers";
@@ -184,6 +185,7 @@ export function ProfilePage({
   const [coverObjectPosition, setCoverObjectPosition] = useState("50% 50%");
   const [repositionOpen, setRepositionOpen] = useState(false);
   const [savingBannerPosition, setSavingBannerPosition] = useState(false);
+  const [bannerUploading, setBannerUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const publishedTracks = useMemo(() => {
@@ -312,12 +314,48 @@ export function ProfilePage({
 
   const handleBannerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
-      setBannerImage(url);
-      setCoverObjectPosition("50% 50%");
-    }
     e.target.value = "";
+    if (!file || bannerUploading) return;
+    if (!authUser?.id) {
+      toast.error("Inicie sessão para alterar o banner.");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      toast.error("Escolha um ficheiro de imagem (JPG, PNG, WebP ou GIF).");
+      return;
+    }
+    const sb = getSupabase();
+    if (!sb) {
+      toast.error("Ligação ao servidor indisponível.");
+      return;
+    }
+    setBannerUploading(true);
+    void (async () => {
+      try {
+        const publicUrl = await uploadUserBanner(sb, authUser.id, file);
+        const { error } = await sb
+          .from("users")
+          .update({
+            cover_image: publicUrl,
+            cover_object_position: "50% 50%",
+          })
+          .eq("id", authUser.id);
+        if (error) throw error;
+        setBannerImage(publicUrl);
+        setCoverObjectPosition("50% 50%");
+        const refreshed = await fetchUserProfileRow(sb, authUser.id);
+        if (refreshed) setProfile(refreshed);
+        toast.success("Banner guardado no perfil.");
+      } catch (err) {
+        const msg =
+          err instanceof Error && err.message
+            ? err.message
+            : "Não foi possível enviar o banner.";
+        toast.error(msg);
+      } finally {
+        setBannerUploading(false);
+      }
+    })();
   };
 
   const handleSaveBannerPosition = (x: number, y: number) => {
@@ -379,10 +417,21 @@ export function ProfilePage({
             src={bannerImage}
             alt=""
             className="w-full h-full object-cover pointer-events-none"
-            style={{ objectPosition: coverObjectPosition }}
+            style={{
+              objectPosition: coverObjectPosition,
+              opacity: bannerUploading ? 0.55 : 1,
+            }}
           />
+          {bannerUploading ? (
+            <div
+              className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none"
+              aria-live="polite"
+            >
+              <p className="text-sm font-semibold text-[#f8f8f8]">A enviar banner…</p>
+            </div>
+          ) : null}
           <div
-            className="absolute inset-0"
+            className="absolute inset-0 pointer-events-none"
             style={{
               background:
                 "linear-gradient(to bottom, transparent 50%, rgba(21,15,16,0.7) 100%)",

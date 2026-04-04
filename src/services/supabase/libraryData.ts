@@ -572,6 +572,34 @@ function extOf(file: File): string {
 
 const AVATAR_EXT = new Set(["jpg", "jpeg", "png", "webp", "gif"]);
 
+const PROFILE_BANNER_MAX_BYTES = 5 * 1024 * 1024;
+
+/** Upload do banner de perfil para `user-avatars` (path `userId/banner-{timestamp}.ext`). */
+export async function uploadUserBanner(
+  sb: SupabaseClient,
+  userId: string,
+  file: File
+): Promise<string> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("O ficheiro deve ser uma imagem.");
+  }
+  if (file.size > PROFILE_BANNER_MAX_BYTES) {
+    throw new Error("A imagem do banner deve ter no máximo 5 MB.");
+  }
+  const raw = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
+  const ext = AVATAR_EXT.has(raw) ? raw : "jpg";
+  const path = `${userId}/banner-${Date.now()}.${ext}`;
+  const { error } = await sb.storage.from("user-avatars").upload(path, file, {
+    cacheControl: "3600",
+    upsert: true,
+  });
+  if (error) throw error;
+  const {
+    data: { publicUrl },
+  } = sb.storage.from("user-avatars").getPublicUrl(path);
+  return publicUrl;
+}
+
 /** Upload para bucket `user-avatars` (path `userId/timestamp.ext`). */
 export async function uploadUserAvatar(
   sb: SupabaseClient,
