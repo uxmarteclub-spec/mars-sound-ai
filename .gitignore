@@ -11,3 +11,6 @@ dist/
 
 # Supabase CLI (credenciais locais após `supabase link`)
 .supabase/
+
+# Lotes temporários para push via MCP (não versionar)
+push-batches/

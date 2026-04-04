@@ -1,0 +1,330 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  ReactNode,
+} from "react";
+import type { DiscoverTrack, HomeCreator, PlaylistSummary, Track } from "../../types/music";
+import type { UploadTrackPayload } from "../../types/upload";
+import type { PlaylistData } from "../components/CreatePlaylistModal";
+import imgPlaylistDefault from "figma:asset/a5fb4564c109688e9da55ace27c2a57ec585d299.png";
+import { getSupabase } from "../../lib/supabaseClient";
+import { useAuth } from "./AuthContext";
+import {
+  addTrackToPlaylistRow,
+  deletePlaylistRow,
+  insertPlaylist,
+  loadLibraryForUser,
+  searchTracksRpc,
+  updatePlaylistRow,
+  uploadTrackWithStorage,
+  fetchGenres,
+  resolveGenreId,
+} from "../../services/supabase/libraryData";
+import { visibilityFromIsPublic } from "../../services/supabase/mappers";
+
+export type { PlaylistSummary as Playlist } from "../../types/music";
+
+interface LibraryContextValue {
+  discoverTracks: DiscoverTrack[];
+  discoverCategories: readonly string[];
+  homeEmAlta: Track[];
+  homeRecentes: Track[];
+  homeDestaques: Track[];
+  homeCreators: HomeCreator[];
+  myPublishedTracks: Track[];
+  playlists: PlaylistSummary[];
+  recentlyPlayed: Track[];
+  playlistTracksById: Record<string, Track[]>;
+  trackCatalog: Map<string, Track>;
+  getTrackById: (id: string) => Track | undefined;
+  libraryLoading: boolean;
+  libraryError: string | null;
+  refreshLibrary: () => Promise<void>;
+  searchPublishedTracks: (query: string) => Promise<DiscoverTrack[]>;
+  createPlaylist: (data: PlaylistData) => void;
+  updatePlaylist: (id: string, data: PlaylistData) => void;
+  deletePlaylist: (id: string) => void;
+  addTrackToPlaylist: (playlistId: string, trackId: string) => Promise<void>;
+  appendUploadedTrack: (payload: UploadTrackPayload) => Promise<Track>;
+}
+
+const LibraryContext = createContext<LibraryContextValue | undefined>(
+  undefined
+);
+
+export function LibraryProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+
+  const [discoverTracks, setDiscoverTracks] = useState<DiscoverTrack[]>([]);
+  const [homeEmAlta, setHomeEmAlta] = useState<Track[]>([]);
+  const [homeRecentes, setHomeRecentes] = useState<Track[]>([]);
+  const [homeDestaques, setHomeDestaques] = useState<Track[]>([]);
+  const [homeCreators, setHomeCreators] = useState<HomeCreator[]>([]);
+  const [myPublishedTracks, setMyPublishedTracks] = useState<Track[]>([]);
+  const [playlists, setPlaylists] = useState<PlaylistSummary[]>([]);
+  const [playlistTracksById, setPlaylistTracksById] = useState<
+    Record<string, Track[]>
+  >({});
+  const [recentlyPlayed, setRecentlyPlayed] = useState<Track[]>([]);
+  const [libraryLoading, setLibraryLoading] = useState(true);
+  const [libraryError, setLibraryError] = useState<string | null>(null);
+  const [genresCache, setGenresCache] = useState<Awaited<
+    ReturnType<typeof fetchGenres>
+  > | null>(null);
+  const [discoverCategoryOptions, setDiscoverCategoryOptions] = useState<
+    string[]
+  >(["Todos"]);
+
+  const refreshLibrary = useCallback(async () => {
+    if (!user?.id) return;
+    const sb = getSupabase();
+    if (!sb) return;
+    setLibraryLoading(true);
+    setLibraryError(null);
+    try {
+      const loaded = await loadLibraryForUser(sb, user.id);
+      setDiscoverTracks(loaded.discoverTracks);
+      setHomeEmAlta(loaded.homeEmAlta);
+      setHomeRecentes(loaded.homeRecentes);
+      setHomeDestaques(loaded.homeDestaques);
+      setHomeCreators(loaded.homeCreators);
+      setMyPublishedTracks(loaded.myPublishedTracks);
+      setPlaylists(loaded.playlists);
+      setPlaylistTracksById(loaded.playlistTracksById);
+      setRecentlyPlayed(loaded.recentlyPlayed);
+      setDiscoverCategoryOptions(loaded.discoverCategories);
+      const g = await fetchGenres(sb);
+      setGenresCache(g);
+    } catch (e) {
+      const msg =
+        e instanceof Error ? e.message : "Não foi possível carregar os dados.";
+      setLibraryError(msg);
+    } finally {
+      setLibraryLoading(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setLibraryLoading(false);
+      return;
+    }
+    void refreshLibrary();
+  }, [user?.id, refreshLibrary]);
+
+  const discoverCategories = useMemo(
+    () => discoverCategoryOptions as readonly string[],
+    [discoverCategoryOptions]
+  );
+
+  const searchPublishedTracks = useCallback(async (query: string) => {
+    const sb = getSupabase();
+    if (!sb) return [];
+    try {
+      return await searchTracksRpc(sb, query);
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const trackCatalog = useMemo(() => {
+    const m = new Map<string, Track>();
+    const add = (t: Track) => {
+      m.set(t.id, t);
+    };
+    discoverTracks.forEach((dt) => {
+      const { category: _c, ...rest } = dt;
+      add(rest as Track);
+    });
+    homeEmAlta.forEach(add);
+    homeRecentes.forEach(add);
+    homeDestaques.forEach(add);
+    myPublishedTracks.forEach(add);
+    recentlyPlayed.forEach(add);
+    for (const tracks of Object.values(playlistTracksById)) {
+      tracks.forEach(add);
+    }
+    return m;
+  }, [
+    discoverTracks,
+    playlistTracksById,
+    homeEmAlta,
+    homeRecentes,
+    homeDestaques,
+    myPublishedTracks,
+    recentlyPlayed,
+  ]);
+
+  const getTrackById = useCallback(
+    (id: string) => trackCatalog.get(id),
+    [trackCatalog]
+  );
+
+  const createPlaylist = useCallback(
+    (data: PlaylistData) => {
+      if (!user?.id) return;
+      const sb = getSupabase();
+      if (!sb) return;
+      void (async () => {
+        try {
+          const row = await insertPlaylist(
+            sb,
+            user.id,
+            data.name,
+            data.description,
+            visibilityFromIsPublic(data.isPublic)
+          );
+          setPlaylists((prev) => [row, ...prev]);
+          setPlaylistTracksById((prev) => ({ ...prev, [row.id]: [] }));
+        } catch {
+          setLibraryError("Não foi possível criar a playlist.");
+        }
+      })();
+    },
+    [user?.id]
+  );
+
+  const updatePlaylist = useCallback((id: string, data: PlaylistData) => {
+    const image = data.coverImage?.trim();
+    const sb = getSupabase();
+    if (!sb) return;
+    void (async () => {
+      try {
+        const row = await updatePlaylistRow(sb, id, {
+          name: data.name,
+          description: data.description,
+          visibility: visibilityFromIsPublic(data.isPublic),
+          cover_image: image && image.startsWith("http") ? image : undefined,
+        });
+        setPlaylists((prev) => prev.map((p) => (p.id === id ? row : p)));
+      } catch {
+        setLibraryError("Não foi possível atualizar a playlist.");
+      }
+    })();
+  }, []);
+
+  const deletePlaylist = useCallback((id: string) => {
+    const sb = getSupabase();
+    if (!sb) return;
+    void (async () => {
+      try {
+        await deletePlaylistRow(sb, id);
+        setPlaylists((prev) => prev.filter((p) => p.id !== id));
+        setPlaylistTracksById((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      } catch {
+        setLibraryError("Não foi possível eliminar a playlist.");
+      }
+    })();
+  }, []);
+
+  const addTrackToPlaylist = useCallback(
+    async (playlistId: string, trackId: string) => {
+      const sb = getSupabase();
+      if (!sb) throw new Error("Cliente indisponível");
+      await addTrackToPlaylistRow(sb, playlistId, trackId);
+      await refreshLibrary();
+    },
+    [refreshLibrary]
+  );
+
+  const appendUploadedTrack = useCallback(
+    async (payload: UploadTrackPayload) => {
+      if (!user?.id) throw new Error("Sessão inválida");
+      if (!payload.audioFile) {
+        throw new Error("É necessário um ficheiro de áudio.");
+      }
+      const sb = getSupabase();
+      if (!sb) throw new Error("Cliente Supabase indisponível");
+      let g = genresCache;
+      if (!g?.length) {
+        g = await fetchGenres(sb);
+        setGenresCache(g);
+      }
+      const genreId = await resolveGenreId(sb, payload.category, g);
+      if (!genreId) throw new Error("Género inválido");
+      const row = await uploadTrackWithStorage({
+        sb,
+        userId: user.id,
+        audioFile: payload.audioFile,
+        coverFile: payload.coverFile ?? null,
+        title: payload.title,
+        genreId,
+        moods: payload.tags ?? [],
+        aiModel: payload.aiGenerator,
+        aiPrompt: payload.prompt,
+        publish: true,
+      });
+      await refreshLibrary();
+      const { category: _c, ...asTrack } = row;
+      return asTrack as Track;
+    },
+    [user?.id, genresCache, refreshLibrary]
+  );
+
+  const value = useMemo<LibraryContextValue>(
+    () => ({
+      discoverTracks,
+      discoverCategories,
+      homeEmAlta,
+      homeRecentes,
+      homeDestaques,
+      homeCreators,
+      myPublishedTracks,
+      playlists,
+      recentlyPlayed,
+      playlistTracksById,
+      trackCatalog,
+      getTrackById,
+      libraryLoading,
+      libraryError,
+      refreshLibrary,
+      searchPublishedTracks,
+      createPlaylist,
+      updatePlaylist,
+      deletePlaylist,
+      addTrackToPlaylist,
+      appendUploadedTrack,
+    }),
+    [
+      discoverTracks,
+      discoverCategories,
+      homeEmAlta,
+      homeRecentes,
+      homeDestaques,
+      homeCreators,
+      myPublishedTracks,
+      playlists,
+      recentlyPlayed,
+      playlistTracksById,
+      trackCatalog,
+      getTrackById,
+      libraryLoading,
+      libraryError,
+      refreshLibrary,
+      searchPublishedTracks,
+      createPlaylist,
+      updatePlaylist,
+      deletePlaylist,
+      addTrackToPlaylist,
+      appendUploadedTrack,
+    ]
+  );
+
+  return (
+    <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>
+  );
+}
+
+export function useLibrary() {
+  const ctx = useContext(LibraryContext);
+  if (!ctx) throw new Error("useLibrary must be used within LibraryProvider");
+  return ctx;
+}
