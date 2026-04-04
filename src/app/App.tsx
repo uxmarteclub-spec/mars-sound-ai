@@ -124,6 +124,7 @@ function AuthenticatedShell() {
   const [activeNav, setActiveNav] = useState("inicio");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null);
+  const [browseCreatorId, setBrowseCreatorId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
@@ -184,6 +185,28 @@ function AuthenticatedShell() {
                 >
                   <HomePage
                     onNavigateToDiscover={() => setActiveNav("descobrir")}
+                    onOpenCreatorProfile={(userId) => {
+                      setBrowseCreatorId(userId);
+                      setActiveNav("criador-perfil");
+                    }}
+                  />
+                </motion.div>
+              ) : activeNav === "criador-perfil" && browseCreatorId ? (
+                <motion.div
+                  key="criador-perfil"
+                  variants={pageVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  transition={pageTransition}
+                >
+                  <ProfilePage
+                    isPublic={true}
+                    profileUserId={browseCreatorId}
+                    onBack={() => {
+                      setBrowseCreatorId(null);
+                      setActiveNav("inicio");
+                    }}
                   />
                 </motion.div>
               ) : activeNav === "descobrir" ? (

@@ -256,6 +256,7 @@ export function DiscoverPage({
                     key={track.id}
                     track={track}
                     variant="list"
+                    quickActionsMode="othersOnly"
                     playbackQueue={filteredTracks as Track[]}
                   />
                 ))}
@@ -279,6 +280,7 @@ export function DiscoverPage({
                   key={track.id}
                   track={track}
                   variant="grid"
+                  quickActionsMode="othersOnly"
                   playbackQueue={filteredTracks as Track[]}
                 />
               ))}

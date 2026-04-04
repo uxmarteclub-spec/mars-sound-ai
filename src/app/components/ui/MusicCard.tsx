@@ -1,4 +1,5 @@
 import { useMusicPlayer, Track } from "../../context/MusicContext";
+import { useAuth } from "../../context/AuthContext";
 import { useFavorites } from "../../context/FavoritesContext";
 import { FavoriteButton } from "./FavoriteButton";
 import { AddToPlaylistMenu } from "./AddToPlaylistMenu";
@@ -8,11 +9,15 @@ import {
   TooltipTrigger,
 } from "./tooltip";
 
+type QuickActionsMode = "always" | "othersOnly" | "never";
+
 interface MusicCardProps {
   track: Track;
   variant?: "grid" | "list";
   showFavorite?: boolean;
   showAddToPlaylist?: boolean;
+  /** Preferir `quickActionsMode` para alinhar com “só outro criador”. */
+  quickActionsMode?: QuickActionsMode;
   className?: string;
   /** Fila para next/previous no player; ex.: lista filtrada da Descobrir */
   playbackQueue?: Track[];
@@ -23,13 +28,29 @@ export function MusicCard({
   variant = "grid",
   showFavorite = true,
   showAddToPlaylist = true,
+  quickActionsMode = "always",
   className = "",
   playbackQueue,
 }: MusicCardProps) {
+  const { user } = useAuth();
   const { playTrack, currentTrack, isPlaying } = useMusicPlayer();
   const { isFavorite: isFav, toggleFavorite } = useFavorites();
   const isCurrentTrack = currentTrack?.id === track.id;
   const favoriteActive = isFav(track.id);
+
+  const othersOnlyActive =
+    Boolean(user?.id && track.ownerUserId && track.ownerUserId !== user.id) ||
+    (!track.ownerUserId && Boolean(user?.id));
+  const showPlaylistBtn =
+    quickActionsMode !== "never" &&
+    showAddToPlaylist &&
+    (quickActionsMode === "always" ||
+      (quickActionsMode === "othersOnly" && othersOnlyActive));
+  const showFavBtn =
+    quickActionsMode !== "never" &&
+    showFavorite &&
+    (quickActionsMode === "always" ||
+      (quickActionsMode === "othersOnly" && othersOnlyActive));
 
   const handleClick = () => {
     playTrack(track, playbackQueue);
@@ -84,10 +105,10 @@ export function MusicCard({
         </div>
 
         <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-          {showAddToPlaylist && (
+          {showPlaylistBtn && (
             <AddToPlaylistMenu trackId={track.id} variant="inline" />
           )}
-          {showFavorite && (
+          {showFavBtn && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <FavoriteButton
@@ -135,8 +156,8 @@ export function MusicCard({
           className="absolute top-2 right-2 flex flex-col gap-2 items-end opacity-0 group-hover:opacity-100 transition-opacity duration-150"
           onClick={(e) => e.stopPropagation()}
         >
-          {showAddToPlaylist && <AddToPlaylistMenu trackId={track.id} />}
-          {showFavorite && (
+          {showPlaylistBtn && <AddToPlaylistMenu trackId={track.id} />}
+          {showFavBtn && (
             <div className="bg-black/70 rounded-full p-2 backdrop-blur-sm">
               <Tooltip>
                 <TooltipTrigger asChild>

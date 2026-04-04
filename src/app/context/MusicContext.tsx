@@ -10,6 +10,7 @@ import {
 } from "react";
 import type { Track } from "../../types/music";
 import { useFavorites } from "./FavoritesContext";
+import { useLibrary } from "./LibraryContext";
 import { notifyTrackPlaybackStarted } from "../../services/supabase/playerAnalytics";
 
 export type { Track } from "../../types/music";
@@ -96,6 +97,15 @@ const MusicContext = createContext<MusicContextType | undefined>(undefined);
 
 export function MusicProvider({ children }: { children: ReactNode }) {
   const { isFavorite: isFavId, toggleFavorite: toggleFavId } = useFavorites();
+  const { refreshRecentlyPlayed } = useLibrary();
+  const refreshRecentRef = useRef(refreshRecentlyPlayed);
+  refreshRecentRef.current = refreshRecentlyPlayed;
+
+  const recordPlaybackStarted = useCallback((trackId: string) => {
+    void notifyTrackPlaybackStarted(trackId).finally(() => {
+      void refreshRecentRef.current();
+    });
+  }, []);
 
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -273,8 +283,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       volume: volumeRef.current,
       updatedAt: Date.now(),
     });
-    void notifyTrackPlaybackStarted(t.id);
-  }, []);
+    recordPlaybackStarted(t.id);
+  }, [recordPlaybackStarted]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -323,7 +333,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
             volume: volumeRef.current,
             updatedAt: Date.now(),
           });
-          void notifyTrackPlaybackStarted(next.id);
+          recordPlaybackStarted(next.id);
         }
         return;
       }
@@ -347,7 +357,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
             volume: volumeRef.current,
             updatedAt: Date.now(),
           });
-          void notifyTrackPlaybackStarted(next.id);
+          recordPlaybackStarted(next.id);
         }
       }
     };
@@ -361,7 +371,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       audio.removeEventListener("pause", onPausePersist);
       audio.removeEventListener("ended", handleEnded);
     };
-  }, [flushPersist, schedulePersist]);
+  }, [flushPersist, schedulePersist, recordPlaybackStarted]);
 
   const playTrack = useCallback((track: Track, newQueue?: Track[]) => {
     if (!audioRef.current) return;
@@ -391,8 +401,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       volume: volumeRef.current,
       updatedAt: Date.now(),
     });
-    void notifyTrackPlaybackStarted(ordered[startIdx].id);
-  }, []);
+    recordPlaybackStarted(ordered[startIdx].id);
+  }, [recordPlaybackStarted]);
 
   const togglePlay = useCallback(() => {
     if (audioRef.current) {

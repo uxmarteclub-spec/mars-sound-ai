@@ -18,6 +18,7 @@ import {
   removeTrackFromPlaylistRow,
   deletePlaylistRow,
   insertPlaylist,
+  fetchRecentlyPlayedTracks,
   loadHomeFeed,
   loadLibraryRest,
   searchTracksRpc,
@@ -55,6 +56,8 @@ interface LibraryContextValue {
   libraryLoading: boolean;
   libraryError: string | null;
   refreshLibrary: () => Promise<void>;
+  /** Atualiza só “tocadas recentemente” (ex.: após reproduzir uma faixa). */
+  refreshRecentlyPlayed: () => Promise<void>;
   searchPublishedTracks: (query: string) => Promise<DiscoverTrack[]>;
   createPlaylist: (data: PlaylistData) => void;
   updatePlaylist: (id: string, data: PlaylistData) => void;
@@ -148,6 +151,18 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     }
     void refreshLibrary();
   }, [user?.id, refreshLibrary]);
+
+  const refreshRecentlyPlayed = useCallback(async () => {
+    if (!user?.id) return;
+    const sb = getSupabase();
+    if (!sb) return;
+    try {
+      const list = await fetchRecentlyPlayedTracks(sb, user.id);
+      setRecentlyPlayed(list);
+    } catch {
+      /* não bloquear o player */
+    }
+  }, [user?.id]);
 
   const discoverCategories = useMemo(
     () => discoverCategoryOptions as readonly string[],
@@ -380,6 +395,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       libraryLoading,
       libraryError,
       refreshLibrary,
+      refreshRecentlyPlayed,
       searchPublishedTracks,
       createPlaylist,
       updatePlaylist,
@@ -406,6 +422,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       libraryLoading,
       libraryError,
       refreshLibrary,
+      refreshRecentlyPlayed,
       searchPublishedTracks,
       createPlaylist,
       updatePlaylist,

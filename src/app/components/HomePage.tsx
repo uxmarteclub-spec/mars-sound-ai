@@ -1,7 +1,25 @@
 import { useState } from "react";
 import { useMusicPlayer, Track } from "../context/MusicContext";
 import { useLibrary } from "../context/LibraryContext";
+import { useAuth } from "../context/AuthContext";
+import { useFavorites } from "../context/FavoritesContext";
+import { FavoriteButton } from "./ui/FavoriteButton";
+import { AddToPlaylistMenu } from "./ui/AddToPlaylistMenu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "./ui/tooltip";
 import type { HomeCreator } from "../../types/music";
+
+function showTrackQuickActionsForOthers(
+  track: Track,
+  myUserId: string | undefined
+): boolean {
+  if (!myUserId) return false;
+  if (!track.ownerUserId) return true;
+  return track.ownerUserId !== myUserId;
+}
 
 // ── Sub-components ────────────────────────────────────────
 
@@ -24,9 +42,24 @@ function PlayingBars() {
   );
 }
 
-function CreatorCard({ creator }: { creator: HomeCreator }) {
+function CreatorCard({
+  creator,
+  onOpen,
+}: {
+  creator: HomeCreator;
+  onOpen?: (userId: string) => void;
+}) {
   return (
     <article
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen?.(creator.id)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen?.(creator.id);
+        }
+      }}
       className="relative flex-none snap-start w-[140px] sm:w-[160px] lg:w-[175px] h-[220px] sm:h-[250px] lg:h-[279px] overflow-hidden cursor-pointer group"
       style={{ border: "1px solid var(--color-border-subtle)" }}
     >
@@ -90,7 +123,11 @@ function MusicCard({
   playQueue: Track[];
 }) {
   const [hovered, setHovered] = useState(false);
+  const { user } = useAuth();
+  const { isFavorite: isFav, toggleFavorite } = useFavorites();
   const { playTrack, currentTrack, isPlaying } = useMusicPlayer();
+  const showOthersActions = showTrackQuickActionsForOthers(track, user?.id);
+  const favoriteActive = isFav(track.id);
 
   const isCurrentTrack = currentTrack?.id === track.id;
   const isActive = isCurrentTrack && isPlaying;
@@ -167,6 +204,29 @@ function MusicCard({
             </div>
           ) : null}
         </div>
+
+        {showOthersActions && hovered ? (
+          <div
+            className="absolute top-3 right-3 flex flex-col gap-2 items-end z-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <AddToPlaylistMenu trackId={track.id} />
+            <div className="bg-black/70 rounded-full p-2 backdrop-blur-sm">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <FavoriteButton
+                    isFavorite={favoriteActive}
+                    onToggle={() => toggleFavorite(track.id)}
+                    size="sm"
+                  />
+                </TooltipTrigger>
+                <TooltipContent side="left">
+                  {favoriteActive ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {/* Info */}
@@ -256,9 +316,13 @@ function SectionHeader({
 
 interface HomePageProps {
   onNavigateToDiscover?: () => void;
+  onOpenCreatorProfile?: (userId: string) => void;
 }
 
-export function HomePage({ onNavigateToDiscover }: HomePageProps) {
+export function HomePage({
+  onNavigateToDiscover,
+  onOpenCreatorProfile,
+}: HomePageProps) {
   const {
     homeEmAlta,
     homeRecentes,
@@ -300,7 +364,9 @@ export function HomePage({ onNavigateToDiscover }: HomePageProps) {
                   Ainda não há criadores públicos na plataforma.
                 </p>
               ) : (
-                homeCreators.map((c) => <CreatorCard key={c.id} creator={c} />)
+                homeCreators.map((c) => (
+                  <CreatorCard key={c.id} creator={c} onOpen={onOpenCreatorProfile} />
+                ))
               )}
             </div>
           </div>

@@ -47,6 +47,7 @@ export function rowToDiscoverTrack(row: TrackRow): DiscoverTrack {
     audioUrl: row.audio_url,
     duration: formatDurationSeconds(row.duration),
     album: row.album ?? undefined,
+    ownerUserId: row.user_id,
     category,
   };
 }
@@ -64,6 +65,7 @@ export function playlistRowToSummary(row: {
   visibility: string;
   track_count: number;
   total_duration: number;
+  user_id?: string;
 }): PlaylistSummary {
   const defaultImg =
     "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400";
@@ -75,6 +77,7 @@ export function playlistRowToSummary(row: {
     trackCount: row.track_count,
     duration: formatPlaylistDuration(row.total_duration),
     isPublic: row.visibility === "PUBLIC",
+    ownerUserId: row.user_id,
   };
 }
 

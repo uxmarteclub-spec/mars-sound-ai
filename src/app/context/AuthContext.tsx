@@ -130,6 +130,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [isBackendConfigured]);
 
+  useEffect(() => {
+    if (!isBackendConfigured || !user?.id) return;
+    const sb = getSupabase();
+    if (!sb) return;
+    const intervalMs = 10 * 60 * 1000;
+    const id = window.setInterval(() => {
+      void sb.auth.refreshSession();
+    }, intervalMs);
+    return () => window.clearInterval(id);
+  }, [isBackendConfigured, user?.id]);
+
   const signInWithPassword = useCallback(
     async (email: string, password: string) => {
       const trimmed = email.trim();

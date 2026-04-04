@@ -380,6 +380,29 @@ export type LibraryRestSnapshot = Omit<LoadedLibrary, keyof HomeFeedSnapshot> & 
   genres: GenreOption[];
 };
 
+/** Últimas reproduções do utilizador (sem recarregar toda a biblioteca). */
+export async function fetchRecentlyPlayedTracks(
+  sb: SupabaseClient,
+  userId: string
+): Promise<Track[]> {
+  const { data, error } = await sb
+    .from("play_history")
+    .select(`played_at, track:tracks(${TRACK_SELECT})`)
+    .eq("user_id", userId)
+    .order("played_at", { ascending: false })
+    .limit(24);
+  if (error) throw error;
+  const out: Track[] = [];
+  for (const h of data ?? []) {
+    const tr = (h as { track: TrackRow | TrackRow[] | null }).track;
+    const single = Array.isArray(tr) ? tr[0] : tr;
+    if (single?.audio_url) {
+      out.push(rowToTrack(single as TrackRow));
+    }
+  }
+  return out;
+}
+
 /** Descobrir, playlists, histórico e géneros — em paralelo após o feed da home. */
 export async function loadLibraryRest(
   sb: SupabaseClient,
@@ -406,11 +429,13 @@ export async function loadLibraryRest(
     .eq("status", "PUBLISHED")
     .order("published_at", { ascending: false, nullsFirst: false })
     .limit(40);
+  /** v1: só playlists do utilizador. Futuro: endpoint/RPC para descobrir playlists públicas e “guardar”. */
   const playlistsPromise = sb
     .from("playlists")
     .select(
-      "id, name, description, cover_image, visibility, track_count, total_duration"
+      "id, name, description, cover_image, visibility, track_count, total_duration, user_id"
     )
+    .eq("user_id", userId)
     .order("updated_at", { ascending: false });
   const ptPromise = sb
     .from("playlist_tracks")
@@ -494,7 +519,7 @@ export async function loadLibraryRest(
     const tr = h.track;
     const single = Array.isArray(tr) ? tr[0] : tr;
     if (single?.audio_url) {
-      recentlyPlayed.push(rowToTrack(single));
+      recentlyPlayed.push(rowToTrack(single as TrackRow));
     }
   }
 
@@ -721,7 +746,7 @@ export async function insertPlaylist(
       user_id: userId,
     })
     .select(
-      "id, name, description, cover_image, visibility, track_count, total_duration"
+      "id, name, description, cover_image, visibility, track_count, total_duration, user_id"
     )
     .single();
   if (error) throw error;
@@ -786,7 +811,7 @@ export async function updatePlaylistRow(
     .update(updatePayload)
     .eq("id", playlistId)
     .select(
-      "id, name, description, cover_image, visibility, track_count, total_duration"
+      "id, name, description, cover_image, visibility, track_count, total_duration, user_id"
     )
     .single();
   if (error) throw error;

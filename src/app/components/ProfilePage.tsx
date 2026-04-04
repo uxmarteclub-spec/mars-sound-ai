@@ -152,6 +152,8 @@ interface ProfilePageProps {
   profileUserId?: string;
   onEditProfile?: () => void;
   onViewPublicProfile?: () => void;
+  /** Ex.: voltar da navegação “Top criadores” na home. */
+  onBack?: () => void;
 }
 
 export function ProfilePage({
@@ -159,6 +161,7 @@ export function ProfilePage({
   profileUserId,
   onEditProfile,
   onViewPublicProfile,
+  onBack,
 }: ProfilePageProps) {
   const { user: authUser } = useAuth();
   const { myPublishedTracks } = useLibrary();
@@ -411,6 +414,26 @@ export function ProfilePage({
 
   return (
     <div className="w-full min-h-full">
+      {onBack ? (
+        <div className="w-full px-4 sm:px-6 lg:px-8 pt-4 pb-2">
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex items-center gap-2 transition-opacity duration-150 hover:opacity-70 text-[#a19a9b]"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+              <path
+                d="M10 4L6 8L10 12"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span className="font-semibold text-[14px]">Voltar</span>
+          </button>
+        </div>
+      ) : null}
       <div className="relative w-full">
         <div className="relative w-full overflow-hidden" style={{ height: "245px" }}>
           <img
