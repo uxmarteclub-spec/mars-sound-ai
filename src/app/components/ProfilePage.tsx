@@ -48,6 +48,10 @@ import {
 import imgBanner from "figma:asset/1ff0fd371e6317f8995f6626691775855756bce5.png";
 import imgProfilePhoto from "figma:asset/2b9669d4caae7e0131df172e452df996b054e84b.png";
 
+/** Máscara na imagem do banner: opacidade 100% → 0% (base), sem camada de cor por cima. */
+const PROFILE_BANNER_MASK_IMAGE =
+  "linear-gradient(to bottom, #fff 0%, #fff 38%, rgba(255,255,255,0.55) 62%, rgba(255,255,255,0.12) 88%, rgba(255,255,255,0) 100%)";
+
 function BannerRepositionPreview({
   imageSrc,
   positionStr,
@@ -459,23 +463,24 @@ export function ProfilePage({
             style={{
               objectPosition: coverObjectPosition,
               opacity: bannerUploading ? 0.55 : 1,
+              WebkitMaskImage: PROFILE_BANNER_MASK_IMAGE,
+              maskImage: PROFILE_BANNER_MASK_IMAGE,
+              WebkitMaskSize: "100% 100%",
+              maskSize: "100% 100%",
+              WebkitMaskRepeat: "no-repeat",
+              maskRepeat: "no-repeat",
+              WebkitMaskPosition: "top center",
+              maskPosition: "top center",
             }}
           />
           {bannerUploading ? (
             <div
-              className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none"
+              className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none z-[2]"
               aria-live="polite"
             >
               <p className="text-sm font-semibold text-[#f8f8f8]">A enviar banner…</p>
             </div>
           ) : null}
-          <div
-            className="absolute inset-0 pointer-events-none"
-            style={{
-              background:
-                "linear-gradient(to bottom, transparent 50%, rgba(21,15,16,0.7) 100%)",
-            }}
-          />
           {!isPublic && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
