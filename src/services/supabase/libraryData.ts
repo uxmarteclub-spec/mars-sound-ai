@@ -37,6 +37,89 @@ export async function fetchGenres(sb: SupabaseClient): Promise<GenreOption[]> {
   return (data ?? []) as GenreOption[];
 }
 
+/** Slug URL-seguro para a tabela `genres.slug` (único). */
+export function slugifyGenreName(input: string): string {
+  const s = input
+    .trim()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return (s || "genero").slice(0, 80);
+}
+
+export type CreateGenreRpcResult =
+  | { ok: true; name: string }
+  | { ok: false; error: string };
+
+/**
+ * Cria género via RPC (limite mensal + moderação no servidor).
+ * Não usar insert direto em `genres` no cliente — RLS bloqueia.
+ */
+export async function createGenreViaRpc(
+  sb: SupabaseClient,
+  displayName: string
+): Promise<CreateGenreRpcResult> {
+  const { data, error } = await sb.rpc("create_genre_with_limits", {
+    p_name: displayName.trim(),
+  });
+  if (error) {
+    return { ok: false, error: "rpc_failed" };
+  }
+  const row = data as {
+    ok?: boolean;
+    error?: string;
+    name?: string;
+  } | null;
+  if (!row || row.ok === false) {
+    return { ok: false, error: row?.error ?? "unknown" };
+  }
+  if (!row.name) {
+    return { ok: false, error: "unknown" };
+  }
+  return { ok: true, name: row.name };
+}
+
+/** Insere género diretamente (só service role / scripts). Preferir `createGenreViaRpc`. */
+export async function insertGenreRow(
+  sb: SupabaseClient,
+  displayName: string
+): Promise<GenreOption> {
+  const name = displayName.trim();
+  if (!name) throw new Error("Nome da categoria inválido.");
+  const slug = slugifyGenreName(name);
+  const { data, error } = await sb
+    .from("genres")
+    .insert({
+      name,
+      slug,
+      description: null,
+      color: null,
+      image: null,
+    })
+    .select("id, name, slug")
+    .single();
+  if (!error && data) {
+    return data as GenreOption;
+  }
+  if (error?.code === "23505") {
+    const { data: bySlug } = await sb
+      .from("genres")
+      .select("id, name, slug")
+      .eq("slug", slug)
+      .maybeSingle();
+    if (bySlug) return bySlug as GenreOption;
+    const { data: byName } = await sb
+      .from("genres")
+      .select("id, name, slug")
+      .eq("name", name)
+      .maybeSingle();
+    if (byName) return byName as GenreOption;
+  }
+  throw error ?? new Error("Não foi possível criar a categoria.");
+}
+
 export async function resolveGenreId(
   sb: SupabaseClient,
   categoryLabel: string | undefined,

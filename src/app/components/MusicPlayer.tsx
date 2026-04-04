@@ -153,12 +153,10 @@ export function MusicPlayer() {
         </div>
         <Tooltip>
           <TooltipTrigger asChild>
-            <span>
-              <FavoriteButton
-                isFavorite={isFavorite}
-                onToggle={toggleFavorite}
-              />
-            </span>
+            <FavoriteButton
+              isFavorite={isFavorite}
+              onToggle={toggleFavorite}
+            />
           </TooltipTrigger>
           <TooltipContent side="top">
             {isFavorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
@@ -214,18 +212,20 @@ export function MusicPlayer() {
                   ? "Pausar"
                   : "Reproduzir"
             }
-            className="w-[43px] h-[43px] flex items-center justify-center cursor-pointer transition-all duration-150 shrink-0 border border-[#30292b] disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{ backgroundColor: "black" }}
+            className="w-[43px] h-[43px] flex items-center justify-center cursor-pointer transition-all duration-150 shrink-0 border disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{
+              backgroundColor: "var(--color-player-play-bg)",
+              borderColor: "var(--color-player-play-bg)",
+              color: "var(--color-player-play-icon)",
+            }}
           >
-            <span style={{ color: "#ff164c" }}>
-              {audioLoading ? (
-                <span className="inline-block w-5 h-5 border-2 border-[#ff164c] border-t-transparent rounded-full animate-spin" />
-              ) : isPlaying ? (
-                <PauseIcon />
-              ) : (
-                <PlayIcon />
-              )}
-            </span>
+            {audioLoading ? (
+              <span className="inline-block w-5 h-5 border-2 border-t-transparent rounded-full animate-spin border-[var(--color-player-play-icon)]" />
+            ) : isPlaying ? (
+              <PauseIcon />
+            ) : (
+              <PlayIcon />
+            )}
           </button>
 
           <button

@@ -3,6 +3,8 @@ interface SearchInputProps {
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  /** Barra composta (Descobrir): sem borda própria — o contentor pai define o contorno. */
+  variant?: "default" | "toolbar";
 }
 
 function SearchIcon() {
@@ -31,10 +33,12 @@ export function SearchInput({
   onChange,
   placeholder = "Buscar músicas ou artistas",
   className = "",
+  variant = "default",
 }: SearchInputProps) {
+  const isToolbar = variant === "toolbar";
   return (
-    <div className={`relative w-full ${className}`}>
-      <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[#ff164c] pointer-events-none">
+    <div className={`relative w-full min-w-0 ${className}`}>
+      <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none text-[var(--color-brand)]">
         <SearchIcon />
       </div>
       <input
@@ -42,7 +46,11 @@ export function SearchInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full bg-transparent border border-[#30292b] rounded-lg px-12 py-3 text-[#bababa] placeholder:text-[#5b4f51] focus:outline-none focus:border-[#ff164c] transition-colors duration-150"
+        className={
+          isToolbar
+            ? "w-full min-h-[48px] bg-transparent border-0 rounded-none pl-12 pr-4 py-3 text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-0 transition-colors duration-150"
+            : "w-full bg-transparent border border-[var(--color-border-subtle)] rounded-lg px-12 py-3 text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-brand)] transition-colors duration-150"
+        }
       />
     </div>
   );

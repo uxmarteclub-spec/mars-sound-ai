@@ -1,19 +1,17 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
+import { toast } from "sonner";
 import { SearchInput } from "./ui/SearchInput";
 import { CategoryChip } from "./ui/CategoryChip";
 import { MusicCard } from "./ui/MusicCard";
+import { GenreCategorySelect } from "./ui/GenreCategorySelect";
 import { Track } from "../context/MusicContext";
 import { Button } from "./ui/button";
 import { useLibrary } from "../context/LibraryContext";
 import type { DiscoverTrack } from "../../types/music";
-
-function ChevronDownIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-      <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-    </svg>
-  );
-}
+import {
+  MUSIC_GENRES_CATALOG,
+  mergeGenreNameLists,
+} from "../../data/musicGenresCatalog";
 
 const PAGE_SIZE = 16;
 
@@ -33,6 +31,7 @@ export function DiscoverPage({
     libraryLoading,
     libraryError,
     refreshLibrary,
+    createGenre,
   } = useLibrary();
   const [activeCategory, setActiveCategory] = useState("Todos");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -40,6 +39,47 @@ export function DiscoverPage({
   const [searchLoading, setSearchLoading] = useState(false);
 
   const hasSearchQuery = searchQuery.trim().length > 0;
+
+  const genrePickerOptions = useMemo(
+    () =>
+      mergeGenreNameLists(
+        discoverCategories.filter((c) => c !== "Todos"),
+        [...MUSIC_GENRES_CATALOG]
+      ),
+    [discoverCategories]
+  );
+
+  const popularChipCategories = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const t of discoverTracks) {
+      const c = t.category?.trim();
+      if (!c) continue;
+      counts.set(c, (counts.get(c) ?? 0) + 1);
+    }
+    const sorted = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([n]) => n);
+    const fallback = [
+      "Pop",
+      "Rock",
+      "Gospel",
+      "Eletrônica",
+      "Samba",
+      "Pagode",
+      "MPB",
+      "Clássica",
+      "Emo",
+    ];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const x of [...sorted, ...fallback]) {
+      if (seen.has(x)) continue;
+      seen.add(x);
+      out.push(x);
+      if (out.length >= 10) break;
+    }
+    return out;
+  }, [discoverTracks]);
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -74,7 +114,7 @@ export function DiscoverPage({
     }
 
     return result;
-  }, [searchQuery, activeCategory, baseTracks]);
+  }, [activeCategory, baseTracks]);
 
   const gridSlice = useMemo(
     () => filteredTracks.slice(0, visibleCount),
@@ -85,46 +125,128 @@ export function DiscoverPage({
     setVisibleCount((c) => Math.min(c + PAGE_SIZE, filteredTracks.length));
   }, [filteredTracks.length]);
 
+  const handleCreateGenre = useCallback(
+    async (name: string) => {
+      try {
+        await createGenre(name);
+        toast.success(`Categoria “${name}” criada.`);
+      } catch (e) {
+        const msg =
+          e instanceof Error ? e.message : "Não foi possível criar a categoria.";
+        toast.error(msg);
+        throw e;
+      }
+    },
+    [createGenre]
+  );
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-[37px] py-6 lg:py-8">
         <div className="mb-6 lg:mb-8">
-          <h1 className="text-2xl sm:text-3xl lg:text-[32px] font-bold text-white mb-2">Descobrir</h1>
-          <p className="text-[#a19a9b] text-sm sm:text-base">
+          <h1 className="text-2xl sm:text-3xl lg:text-[32px] font-bold text-[var(--color-text-primary)] mb-2">
+            Descobrir
+          </h1>
+          <p className="text-[var(--color-text-secondary)] text-sm sm:text-base">
             Encontre sua próxima música criada com AI
           </p>
           {libraryError ? (
-            <div className="mt-4 rounded-lg border border-[#ff164c]/40 bg-[#ff164c]/10 px-4 py-3 text-sm text-[#f8f8f8] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="mt-4 rounded-lg border border-[var(--color-brand)]/40 bg-[var(--color-active-bg)] px-4 py-3 text-sm text-[var(--color-text-primary)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <span>Não foi possível carregar as músicas.</span>
               <button
                 type="button"
                 onClick={() => void refreshLibrary()}
-                className="shrink-0 px-3 py-1.5 rounded-md bg-[#ff164c] text-white font-semibold text-xs"
+                className="shrink-0 px-3 py-1.5 rounded-md bg-[var(--color-brand)] text-white font-semibold text-xs"
               >
                 Tentar de novo
               </button>
             </div>
           ) : null}
           {libraryLoading && discoverTracks.length === 0 ? (
-            <p className="mt-4 text-sm text-[#a19a9b]">A carregar músicas…</p>
+            <p className="mt-4 text-sm text-[var(--color-text-secondary)]">
+              A carregar músicas…
+            </p>
           ) : null}
         </div>
 
-        <div className="mb-6">
-          <SearchInput
-            value={searchQuery}
-            onChange={onSearchQueryChange}
-            placeholder="Buscar músicas ou artistas"
-          />
-        </div>
+        {hasSearchQuery ? (
+          <div className="mb-6">
+            <SearchInput
+              value={searchQuery}
+              onChange={onSearchQueryChange}
+              placeholder="Buscar músicas ou artistas"
+            />
+          </div>
+        ) : (
+          <>
+            <div className="mb-4 rounded-lg border border-[var(--color-border-subtle)] flex flex-col sm:flex-row transition-colors focus-within:border-[var(--color-brand)] overflow-visible bg-[var(--color-bg-base)]">
+              <div className="flex-1 min-w-0 border-b sm:border-b-0 sm:border-r border-[var(--color-border-subtle)] sm:rounded-tl-lg sm:rounded-bl-lg overflow-hidden">
+                <SearchInput
+                  variant="toolbar"
+                  value={searchQuery}
+                  onChange={onSearchQueryChange}
+                  placeholder="Buscar músicas ou artistas"
+                />
+              </div>
+              <div className="sm:w-[min(100%,280px)] shrink-0 sm:rounded-tr-lg sm:rounded-br-lg overflow-visible relative z-10">
+                <GenreCategorySelect
+                  aria-label="Filtrar por categoria"
+                  value={activeCategory}
+                  allValue="Todos"
+                  allLabel="Categorias"
+                  options={genrePickerOptions}
+                  onChange={(next) => {
+                    setActiveCategory(next);
+                    setVisibleCount(PAGE_SIZE);
+                  }}
+                  onCreateGenre={handleCreateGenre}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 mb-8">
+              <span className="text-[13px] font-semibold text-[var(--color-text-muted)] shrink-0">
+                Mais visitadas
+              </span>
+              <div
+                className="flex flex-wrap gap-2"
+                style={{ scrollbarWidth: "none" }}
+              >
+                <CategoryChip
+                  label="Todos"
+                  active={activeCategory === "Todos"}
+                  onClick={() => {
+                    setActiveCategory("Todos");
+                    setVisibleCount(PAGE_SIZE);
+                  }}
+                />
+                {popularChipCategories.map((category) => (
+                  <CategoryChip
+                    key={category}
+                    label={category}
+                    active={activeCategory === category}
+                    onClick={() => {
+                      setActiveCategory(category);
+                      setVisibleCount(PAGE_SIZE);
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          </>
+        )}
 
         {hasSearchQuery ? (
           <div className="space-y-4">
             {searchLoading ? (
-              <p className="text-[#a19a9b] text-sm mb-4">A pesquisar na base de dados…</p>
+              <p className="text-[var(--color-text-secondary)] text-sm mb-4">
+                A pesquisar na base de dados…
+              </p>
             ) : (
-              <p className="text-[#a19a9b] text-sm mb-4">
-                {filteredTracks.length} resultado{filteredTracks.length !== 1 ? "s" : ""} encontrado{filteredTracks.length !== 1 ? "s" : ""}
+              <p className="text-[var(--color-text-secondary)] text-sm mb-4">
+                {filteredTracks.length} resultado
+                {filteredTracks.length !== 1 ? "s" : ""} encontrado
+                {filteredTracks.length !== 1 ? "s" : ""}
               </p>
             )}
             {filteredTracks.length > 0 ? (
@@ -140,38 +262,17 @@ export function DiscoverPage({
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-20">
-                <p className="text-[#a19a9b] text-lg mb-4">Nenhum resultado encontrado</p>
-                <p className="text-[#5b4f51] text-sm">Tente buscar por outro termo</p>
+                <p className="text-[var(--color-text-secondary)] text-lg mb-4">
+                  Nenhum resultado encontrado
+                </p>
+                <p className="text-[var(--color-text-muted)] text-sm">
+                  Tente buscar por outro termo
+                </p>
               </div>
             )}
-
           </div>
         ) : (
           <>
-            <div className="flex items-center gap-4 mb-8 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
-              <span className="text-[#a19a9b] text-sm font-semibold shrink-0">Categorias</span>
-              <div className="flex items-center gap-2 flex-1 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-                {discoverCategories.map((category) => (
-                  <CategoryChip
-                    key={category}
-                    label={category}
-                    active={activeCategory === category}
-                    onClick={() => {
-                      setActiveCategory(category);
-                      setVisibleCount(PAGE_SIZE);
-                    }}
-                  />
-                ))}
-              </div>
-              <button
-                type="button"
-                className="flex items-center gap-2 text-[#a19a9b] hover:text-white transition-colors duration-150 shrink-0"
-                aria-hidden
-              >
-                <ChevronDownIcon />
-              </button>
-            </div>
-
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-6">
               {gridSlice.map((track) => (
                 <MusicCard

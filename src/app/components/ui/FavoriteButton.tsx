@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { forwardRef, useState } from "react";
 
-interface FavoriteButtonProps {
+export interface FavoriteButtonProps
+  extends Omit<React.ComponentPropsWithoutRef<"button">, "onClick"> {
   isFavorite: boolean;
   onToggle: () => void;
   size?: "sm" | "md" | "lg";
@@ -22,42 +23,56 @@ function HeartIcon({ filled, size }: { filled?: boolean; size: number }) {
   );
 }
 
-export function FavoriteButton({
-  isFavorite,
-  onToggle,
-  size = "md",
-  className = "",
-}: FavoriteButtonProps) {
-  const [isAnimating, setIsAnimating] = useState(false);
+export const FavoriteButton = forwardRef<HTMLButtonElement, FavoriteButtonProps>(
+  function FavoriteButton(
+    {
+      isFavorite,
+      onToggle,
+      size = "md",
+      className = "",
+      onClick: propsOnClick,
+      type = "button",
+      style: styleProp,
+      ...rest
+    },
+    ref
+  ) {
+    const [isAnimating, setIsAnimating] = useState(false);
 
-  const sizeMap = {
-    sm: { cls: "w-8 h-8", iconSize: 16 },
-    md: { cls: "w-9 h-9", iconSize: 18 },
-    lg: { cls: "w-10 h-10", iconSize: 22 },
-  };
+    const sizeMap = {
+      sm: { cls: "w-8 h-8", iconSize: 16 },
+      md: { cls: "w-9 h-9", iconSize: 18 },
+      lg: { cls: "w-10 h-10", iconSize: 22 },
+    };
 
-  const { cls, iconSize } = sizeMap[size];
+    const { cls, iconSize } = sizeMap[size];
 
-  const handleToggle = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsAnimating(true);
-    setTimeout(() => setIsAnimating(false), 300);
-    onToggle();
-  };
+    const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+      propsOnClick?.(e);
+      e.stopPropagation();
+      setIsAnimating(true);
+      window.setTimeout(() => setIsAnimating(false), 300);
+      onToggle();
+    };
 
-  return (
-    <button
-      onClick={handleToggle}
-      className={`shrink-0 cursor-pointer flex items-center justify-center ${cls} ${className}`}
-      style={{
-        color: "#ff164c",
-        transform: isAnimating ? "scale(1.3)" : "scale(1)",
-        transition: "transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), color 0.15s",
-      }}
-      aria-label={isFavorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
-      aria-pressed={isFavorite}
-    >
-      <HeartIcon filled={isFavorite} size={iconSize} />
-    </button>
-  );
-}
+    return (
+      <button
+        ref={ref}
+        type={type}
+        {...rest}
+        onClick={handleClick}
+        className={`shrink-0 cursor-pointer flex items-center justify-center ${cls} ${className}`}
+        style={{
+          color: "#ff164c",
+          transform: isAnimating ? "scale(1.3)" : "scale(1)",
+          transition: "transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), color 0.15s",
+          ...styleProp,
+        }}
+        aria-label={isFavorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+        aria-pressed={isFavorite}
+      />
+    );
+  }
+);
+
+FavoriteButton.displayName = "FavoriteButton";

@@ -23,8 +23,13 @@ import {
   updatePlaylistRow,
   uploadTrackWithStorage,
   fetchGenres,
+  createGenreViaRpc,
   resolveGenreId,
 } from "../../services/supabase/libraryData";
+import {
+  mapGenreRpcError,
+  validateGenreDisplayName,
+} from "../../utils/genreContentPolicy";
 import { visibilityFromIsPublic } from "../../services/supabase/mappers";
 
 export type { PlaylistSummary as Playlist } from "../../types/music";
@@ -54,6 +59,8 @@ interface LibraryContextValue {
   deletePlaylist: (id: string) => void;
   addTrackToPlaylist: (playlistId: string, trackId: string) => Promise<void>;
   appendUploadedTrack: (payload: UploadTrackPayload) => Promise<Track>;
+  /** Cria género no Supabase e atualiza opções de categoria na UI. */
+  createGenre: (displayName: string) => Promise<string>;
 }
 
 const LibraryContext = createContext<LibraryContextValue | undefined>(
@@ -152,6 +159,26 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     } catch {
       return [];
     }
+  }, []);
+
+  const createGenre = useCallback(async (displayName: string) => {
+    const validated = validateGenreDisplayName(displayName);
+    if (!validated.ok) {
+      throw new Error(validated.message);
+    }
+    const sb = getSupabase();
+    if (!sb) throw new Error("Cliente indisponível");
+    const result = await createGenreViaRpc(sb, validated.name);
+    if (!result.ok) {
+      throw new Error(mapGenreRpcError(result.error));
+    }
+    const g = await fetchGenres(sb);
+    setGenresCache(g);
+    const names = g
+      .map((x) => x.name)
+      .sort((a, b) => a.localeCompare(b, "pt"));
+    setDiscoverCategoryOptions(["Todos", ...names]);
+    return result.name;
   }, []);
 
   const trackCatalog = useMemo(() => {
@@ -316,6 +343,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       deletePlaylist,
       addTrackToPlaylist,
       appendUploadedTrack,
+      createGenre,
     }),
     [
       discoverTracks,
@@ -340,6 +368,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       deletePlaylist,
       addTrackToPlaylist,
       appendUploadedTrack,
+      createGenre,
     ]
   );
 

@@ -60,6 +60,8 @@
   --color-player-bg:   var(--mars-dark-950);
   --color-progress-bg: var(--mars-dark-500);
   --color-progress-fill: var(--mars-red-500);
+  --color-player-play-bg:   var(--color-brand);
+  --color-player-play-icon: var(--mars-dark-950);
 
   /* Spacing */
   --sidebar-width: 190px;

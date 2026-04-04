@@ -1,13 +1,12 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import svgPaths from "../../imports/svg-r7seo7qk5p";
 import { useLibrary } from "../context/LibraryContext";
-
-const CATEGORIES = [
-  "Pop", "Rock", "Lo-fi", "Ambient", "Cinematic", "Gospel", "R&B", "Hip-Hop",
-  "Eletrônica", "Jazz", "Clássica", "Funk", "Sertanejo", "MPB", "Metal",
-  "Reggae", "Soul", "Trap", "Drill", "Phonk",
-];
+import { GenreCategorySelect } from "./ui/GenreCategorySelect";
+import {
+  MUSIC_GENRES_CATALOG,
+  mergeGenreNameLists,
+} from "../../data/musicGenresCatalog";
 
 const TAG_SUGGESTIONS = ["Ambient", "Gospel", "Relax", "Energético", "Pop", "Rock", "Sad", "Happy", "Dark", "Chill"];
 
@@ -33,7 +32,7 @@ function FieldError({ message }: { message: string }) {
 }
 
 export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
-  const { appendUploadedTrack } = useLibrary();
+  const { appendUploadedTrack, discoverCategories, createGenre } = useLibrary();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Audio upload
@@ -52,8 +51,6 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
   const [title, setTitle] = useState("");
   const [aiGenerator, setAiGenerator] = useState("");
   const [category, setCategory] = useState("");
-  const [categorySearch, setCategorySearch] = useState("");
-  const [categoryOpen, setCategoryOpen] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [prompt, setPrompt] = useState("");
@@ -63,8 +60,28 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
   const [errors, setErrors] = useState<{ audio?: string; title?: string; agreed?: string }>({});
   const [submitted, setSubmitted] = useState(false);
 
-  const filteredCategories = CATEGORIES.filter((c) =>
-    c.toLowerCase().includes(categorySearch.toLowerCase())
+  const uploadGenreOptions = useMemo(
+    () =>
+      mergeGenreNameLists(
+        discoverCategories.filter((c) => c !== "Todos"),
+        [...MUSIC_GENRES_CATALOG]
+      ),
+    [discoverCategories]
+  );
+
+  const handleCreateGenreUpload = useCallback(
+    async (name: string) => {
+      try {
+        await createGenre(name);
+        toast.success(`Categoria “${name}” criada.`);
+      } catch (e) {
+        const msg =
+          e instanceof Error ? e.message : "Não foi possível criar a categoria.";
+        toast.error(msg);
+        throw e;
+      }
+    },
+    [createGenre]
   );
 
   // ── Audio upload handlers ──
@@ -385,69 +402,26 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
 
               {/* Category + AI Generator */}
               <div className="flex flex-col sm:flex-row gap-4">
-                {/* Category dropdown */}
+                {/* Category dropdown (mesmo padrão que Descobrir) */}
                 <div className="flex-1 flex flex-col gap-2 relative">
                   <label className="text-[12px] leading-[1.25]" style={{ color: "#bababa" }}>
                     Categoria
                   </label>
-                  <button
-                    className="w-full flex items-center justify-between px-6 py-2 text-left transition-colors min-h-[44px]"
-                    style={{ border: "1px solid #30292b", color: "#f8f8f8" }}
-                    onClick={() => setCategoryOpen(!categoryOpen)}
-                    type="button"
+                  <div
+                    className="hover:border-[#ff164c]/50 transition-colors"
+                    style={{ border: "1px solid #30292b" }}
                   >
-                    <span className="font-semibold text-[16px] leading-[1.5]">
-                      {category || "Todas as categorias"}
-                    </span>
-                    <svg
-                      className={`shrink-0 transition-transform duration-200 ${categoryOpen ? "rotate-180" : ""}`}
-                      width="16" height="16" fill="none" viewBox="0 0 9.33439 4.7821"
-                    >
-                      <path d={svgPaths.p3c6a5200} fill="#FF164C" />
-                    </svg>
-                  </button>
-
-                  {categoryOpen && (
-                    <div
-                      className="absolute top-full left-0 right-0 z-50 mt-1 overflow-hidden"
-                      style={{ background: "#24191b", border: "1px solid #30292b" }}
-                    >
-                      {/* Search inside dropdown */}
-                      <div className="p-2" style={{ borderBottom: "1px solid #30292b" }}>
-                        <input
-                          type="text"
-                          value={categorySearch}
-                          onChange={(e) => setCategorySearch(e.target.value)}
-                          placeholder="Buscar categoria..."
-                          className="w-full bg-transparent px-3 py-1 text-[14px] outline-none"
-                          style={{ color: "#f8f8f8", caretColor: "#ff164c" }}
-                          autoFocus
-                        />
-                      </div>
-                      <div className="max-h-[200px] overflow-y-auto scrollbar-hide">
-                        {filteredCategories.length > 0 ? (
-                          filteredCategories.map((cat) => (
-                            <button
-                              key={cat}
-                              className="w-full text-left px-6 py-2 text-[14px] font-semibold transition-colors hover:bg-white/5 min-h-[44px]"
-                              style={{ color: category === cat ? "#ff164c" : "#f8f8f8" }}
-                              onClick={() => {
-                                setCategory(cat);
-                                setCategorySearch("");
-                                setCategoryOpen(false);
-                              }}
-                            >
-                              {cat}
-                            </button>
-                          ))
-                        ) : (
-                          <div className="px-6 py-3 text-[13px]" style={{ color: "#bababa" }}>
-                            Nenhuma categoria encontrada
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
+                    <GenreCategorySelect
+                      aria-label="Selecionar categoria da música"
+                      value={category}
+                      allValue=""
+                      allLabel="Todas as categorias"
+                      options={uploadGenreOptions}
+                      onChange={(next) => setCategory(next)}
+                      onCreateGenre={handleCreateGenreUpload}
+                      triggerClassName="min-h-[44px] px-6 py-2"
+                    />
+                  </div>
                 </div>
 
                 {/* AI Generator */}
