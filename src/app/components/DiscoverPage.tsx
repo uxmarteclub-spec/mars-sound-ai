@@ -3,7 +3,7 @@ import { SearchInput } from "./ui/SearchInput";
 import { CategoryChip } from "./ui/CategoryChip";
 import { MusicCard } from "./ui/MusicCard";
 import { Track } from "../context/MusicContext";
-import { Button } from "./ui/Button";
+import { Button } from "./ui/button";
 import { useLibrary } from "../context/LibraryContext";
 import type { DiscoverTrack } from "../../types/music";
 

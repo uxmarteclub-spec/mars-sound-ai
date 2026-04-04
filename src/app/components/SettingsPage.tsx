@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { Switch } from "./ui/switch";
 import { CategoryChip } from "./ui/CategoryChip";
-import { Button } from "./ui/Button";
+import { Button } from "./ui/button";
 import { useAuth } from "../context/AuthContext";
 import { getSupabase } from "../../lib/supabaseClient";
 import { fetchUserProfileRow } from "../../services/supabase/libraryData";

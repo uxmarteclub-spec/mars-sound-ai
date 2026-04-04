@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { useMusicPlayer, Track } from "../context/MusicContext";
 import { useAuth } from "../context/AuthContext";
 import { TrackRow, TrackTableHeader } from "./ui/TrackRow";
-import { Button } from "./ui/Button";
+import { Button } from "./ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
