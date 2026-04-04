@@ -15,12 +15,14 @@ import { getSupabase } from "../../lib/supabaseClient";
 import { useAuth } from "./AuthContext";
 import {
   addTrackToPlaylistRow,
+  removeTrackFromPlaylistRow,
   deletePlaylistRow,
   insertPlaylist,
   loadHomeFeed,
   loadLibraryRest,
   searchTracksRpc,
   updatePlaylistRow,
+  uploadPlaylistCoverFile,
   uploadTrackWithStorage,
   fetchGenres,
   createGenreViaRpc,
@@ -58,6 +60,7 @@ interface LibraryContextValue {
   updatePlaylist: (id: string, data: PlaylistData) => void;
   deletePlaylist: (id: string) => void;
   addTrackToPlaylist: (playlistId: string, trackId: string) => Promise<void>;
+  removeTrackFromPlaylist: (playlistId: string, trackId: string) => Promise<void>;
   appendUploadedTrack: (payload: UploadTrackPayload) => Promise<Track>;
   /** Cria género no Supabase e atualiza opções de categoria na UI. */
   createGenre: (displayName: string) => Promise<string>;
@@ -228,7 +231,22 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
             data.description,
             visibilityFromIsPublic(data.isPublic)
           );
-          setPlaylists((prev) => [row, ...prev]);
+          let next = row;
+          if (data.coverFile) {
+            const url = await uploadPlaylistCoverFile(
+              sb,
+              user.id,
+              row.id,
+              data.coverFile
+            );
+            next = await updatePlaylistRow(sb, row.id, {
+              name: data.name,
+              description: data.description,
+              visibility: visibilityFromIsPublic(data.isPublic),
+              cover_image: url,
+            });
+          }
+          setPlaylists((prev) => [next, ...prev]);
           setPlaylistTracksById((prev) => ({ ...prev, [row.id]: [] }));
         } catch {
           setLibraryError("Não foi possível criar a playlist.");
@@ -238,24 +256,39 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     [user?.id]
   );
 
-  const updatePlaylist = useCallback((id: string, data: PlaylistData) => {
-    const image = data.coverImage?.trim();
-    const sb = getSupabase();
-    if (!sb) return;
-    void (async () => {
-      try {
-        const row = await updatePlaylistRow(sb, id, {
-          name: data.name,
-          description: data.description,
-          visibility: visibilityFromIsPublic(data.isPublic),
-          cover_image: image && image.startsWith("http") ? image : undefined,
-        });
-        setPlaylists((prev) => prev.map((p) => (p.id === id ? row : p)));
-      } catch {
-        setLibraryError("Não foi possível atualizar a playlist.");
-      }
-    })();
-  }, []);
+  const updatePlaylist = useCallback(
+    (id: string, data: PlaylistData) => {
+      const sb = getSupabase();
+      if (!sb || !user?.id) return;
+      void (async () => {
+        try {
+          let coverPatch: string | undefined;
+          if (data.coverFile) {
+            coverPatch = await uploadPlaylistCoverFile(
+              sb,
+              user.id,
+              id,
+              data.coverFile
+            );
+          } else {
+            const image = data.coverImage?.trim();
+            coverPatch =
+              image && image.startsWith("http") ? image : undefined;
+          }
+          const row = await updatePlaylistRow(sb, id, {
+            name: data.name,
+            description: data.description,
+            visibility: visibilityFromIsPublic(data.isPublic),
+            cover_image: coverPatch,
+          });
+          setPlaylists((prev) => prev.map((p) => (p.id === id ? row : p)));
+        } catch {
+          setLibraryError("Não foi possível atualizar a playlist.");
+        }
+      })();
+    },
+    [user?.id]
+  );
 
   const deletePlaylist = useCallback((id: string) => {
     const sb = getSupabase();
@@ -280,6 +313,16 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       const sb = getSupabase();
       if (!sb) throw new Error("Cliente indisponível");
       await addTrackToPlaylistRow(sb, playlistId, trackId);
+      await refreshLibrary();
+    },
+    [refreshLibrary]
+  );
+
+  const removeTrackFromPlaylist = useCallback(
+    async (playlistId: string, trackId: string) => {
+      const sb = getSupabase();
+      if (!sb) throw new Error("Cliente indisponível");
+      await removeTrackFromPlaylistRow(sb, playlistId, trackId);
       await refreshLibrary();
     },
     [refreshLibrary]
@@ -342,6 +385,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       updatePlaylist,
       deletePlaylist,
       addTrackToPlaylist,
+      removeTrackFromPlaylist,
       appendUploadedTrack,
       createGenre,
     }),
@@ -367,6 +411,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       updatePlaylist,
       deletePlaylist,
       addTrackToPlaylist,
+      removeTrackFromPlaylist,
       appendUploadedTrack,
       createGenre,
     ]

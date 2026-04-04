@@ -1,4 +1,3 @@
-import { Globe2 } from "lucide-react";
 import imgMenuSidebar from "figma:asset/97e074a98bd267b7e793590cf7916ed3199aac5e.png";
 import svgPaths from "../../imports/svg-l3bgvctykq";
 
@@ -85,15 +84,6 @@ export function Sidebar({ activeItem = "inicio", onNavChange, mobileOpen, onMobi
 
   const profileItems: NavItem[] = [
     { id: "perfil", label: "Perfil", icon: <ProfileIcon /> },
-    {
-      id: "perfil-publico",
-      label: "Prévia perfil público",
-      icon: (
-        <span className="size-4 flex items-center justify-center">
-          <Globe2 className="size-4" aria-hidden />
-        </span>
-      ),
-    },
     { id: "configuracoes", label: "Configurações", icon: <SettingsIcon /> },
   ];
 

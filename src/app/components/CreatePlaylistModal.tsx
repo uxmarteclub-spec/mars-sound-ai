@@ -1,11 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import svgPaths from "../../imports/svg-upld88zslp";
+
+const COVER_MAX_BYTES = 2 * 1024 * 1024;
 
 export interface PlaylistData {
   name: string;
   description: string;
   isPublic: boolean;
+  /** URL existente (edição) quando não há ficheiro novo */
   coverImage?: string;
+  /** Ficheiro local escolhido pelo utilizador (criação ou nova capa) */
+  coverFile?: File | null;
 }
 
 interface CreatePlaylistModalProps {
@@ -18,38 +23,97 @@ interface CreatePlaylistModalProps {
 }
 
 export function CreatePlaylistModal({ isOpen, onClose, onCreate, initialData, mode = "create" }: CreatePlaylistModalProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [isPublic, setIsPublic] = useState(true);
-  const [coverImage, setCoverImage] = useState<string>("");
+  /** URL remota (servidor) para manter na edição quando não há ficheiro novo */
+  const [remoteCoverUrl, setRemoteCoverUrl] = useState("");
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [previewObjectUrl, setPreviewObjectUrl] = useState<string | null>(null);
+  const [coverError, setCoverError] = useState("");
+
+  const revokePreview = () => {
+    setPreviewObjectUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+  };
 
   // Sync with initialData when opening in edit mode
   useEffect(() => {
-    if (isOpen && initialData) {
+    if (!isOpen) return;
+    setCoverError("");
+    setPreviewObjectUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    if (initialData) {
       setName(initialData.name ?? "");
       setDescription(initialData.description ?? "");
       setIsPublic(initialData.isPublic ?? true);
-      setCoverImage(initialData.coverImage ?? "");
-    } else if (isOpen && mode === "create") {
+      setRemoteCoverUrl(initialData.coverImage?.trim() ?? "");
+      setCoverFile(null);
+    } else if (mode === "create") {
       setName("");
       setDescription("");
       setIsPublic(true);
-      setCoverImage("");
+      setRemoteCoverUrl("");
+      setCoverFile(null);
     }
   }, [isOpen, initialData, mode]);
+
+  useEffect(() => {
+    return () => {
+      if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+    };
+  }, [previewObjectUrl]);
 
   if (!isOpen) return null;
 
   const isEdit = mode === "edit";
 
+  const displayCoverSrc =
+    previewObjectUrl ||
+    (remoteCoverUrl.startsWith("http") ? remoteCoverUrl : "");
+
+  const handleCoverFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setCoverError("Escolha um ficheiro de imagem (JPG, PNG, etc.).");
+      return;
+    }
+    if (file.size > COVER_MAX_BYTES) {
+      setCoverError("A imagem deve ter no máximo 2 MB.");
+      return;
+    }
+    setCoverError("");
+    setCoverFile(file);
+    setPreviewObjectUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+  };
+
   const handleSubmit = () => {
     if (!name.trim()) return;
-    onCreate({ name, description, isPublic, coverImage });
+    onCreate({
+      name: name.trim(),
+      description,
+      isPublic,
+      coverImage: remoteCoverUrl || undefined,
+      coverFile: coverFile ?? undefined,
+    });
     if (!isEdit) {
       setName("");
       setDescription("");
       setIsPublic(true);
-      setCoverImage("");
+      setRemoteCoverUrl("");
+      setCoverFile(null);
+      revokePreview();
+      setCoverError("");
     }
   };
 
@@ -91,14 +155,46 @@ export function CreatePlaylistModal({ isOpen, onClose, onCreate, initialData, mo
           {/* Cover image and inputs row */}
           <div className="flex gap-6">
             {/* Cover upload */}
-            <div className="w-[137px] h-[137px] flex-shrink-0 border border-[#30292b] flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-[#ff164c] transition-colors">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                <path d={svgPaths.p10ab0370} fill="#ebe9e9" />
-                <path d={svgPaths.p17084a00} fill="#ebe9e9" />
-              </svg>
-              <p className="font-semibold text-[16px] text-[#f8f8f8] leading-[1.5]">
-                Capa
+            <div className="flex flex-col gap-2 flex-shrink-0">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                className="sr-only"
+                aria-label="Carregar imagem de capa da playlist"
+                onChange={handleCoverFileChange}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="w-[137px] h-[137px] border border-[#30292b] flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-[#ff164c] transition-colors overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff164c] focus-visible:ring-offset-2 focus-visible:ring-offset-[#24191b]"
+              >
+                {displayCoverSrc ? (
+                  <img
+                    src={displayCoverSrc}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
+                      <path d={svgPaths.p10ab0370} fill="#ebe9e9" />
+                      <path d={svgPaths.p17084a00} fill="#ebe9e9" />
+                    </svg>
+                    <p className="font-semibold text-[16px] text-[#f8f8f8] leading-[1.5]">
+                      Capa
+                    </p>
+                  </>
+                )}
+              </button>
+              <p className="text-[11px] text-[#bababa] leading-snug max-w-[137px]">
+                JPG, PNG, WebP ou GIF até 2 MB.
               </p>
+              {coverError ? (
+                <p className="text-[11px] text-[#ff6387] leading-snug max-w-[137px]" role="alert">
+                  {coverError}
+                </p>
+              ) : null}
             </div>
 
             {/* Inputs */}
@@ -136,18 +232,23 @@ export function CreatePlaylistModal({ isOpen, onClose, onCreate, initialData, mo
                   Pública
                 </p>
                 <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isPublic}
                   onClick={() => setIsPublic(!isPublic)}
-                  className="relative w-[34px] h-[14px] rounded-full transition-colors"
+                  className="relative w-[34px] h-[14px] rounded-full transition-colors shrink-0"
                   style={{ backgroundColor: isPublic ? "#ff6387" : "#5b4f51" }}
                 >
-                  <div
+                  <span
                     className="absolute top-[-2px] w-[18px] h-[18px] rounded-full bg-[#ff164c] transition-all duration-200"
                     style={{ left: isPublic ? "16px" : "0px" }}
                   />
                 </button>
               </div>
-              <p className="text-[12px] text-[#bababa] leading-[1.25]">
-                Outros usuários poderão ver e ouvir
+              <p className="text-[12px] text-[#bababa] leading-[1.25] max-w-[280px]">
+                {isPublic
+                  ? "Outros utilizadores poderão ver e ouvir esta playlist."
+                  : "Apenas você vê esta playlist; não aparece para outros utilizadores."}
               </p>
             </div>
 

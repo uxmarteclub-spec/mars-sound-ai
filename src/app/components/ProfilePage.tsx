@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import { Upload, ImageIcon } from "lucide-react";
+import { Upload, Move, Share2 } from "lucide-react";
 import { useLibrary } from "../context/LibraryContext";
 import { getSupabase } from "../../lib/supabaseClient";
 import {
@@ -19,18 +19,119 @@ import {
   type PublicUserProfileRow,
 } from "../../services/supabase/libraryData";
 import { formatPlaylistDuration } from "../../services/supabase/mappers";
+import {
+  parseCoverObjectPosition,
+  formatCoverObjectPosition,
+} from "../../utils/coverPosition";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog";
+import { ShareChannelsMenu } from "./ui/ShareChannelsMenu";
 
 import imgBanner from "figma:asset/1ff0fd371e6317f8995f6626691775855756bce5.png";
 import imgProfilePhoto from "figma:asset/2b9669d4caae7e0131df172e452df996b054e84b.png";
 
-function ShareIcon() {
+function BannerRepositionPreview({
+  imageSrc,
+  positionStr,
+  saving,
+  onSave,
+  onCancel,
+}: {
+  imageSrc: string;
+  positionStr: string;
+  saving?: boolean;
+  onSave: (x: number, y: number) => void;
+  onCancel: () => void;
+}) {
+  const initial = parseCoverObjectPosition(positionStr);
+  const [x, setX] = useState(initial.x);
+  const [y, setY] = useState(initial.y);
+  const dragRef = useRef({
+    active: false,
+    sx: 0,
+    sy: 0,
+    ix: 0,
+    iy: 0,
+  });
+
+  useEffect(() => {
+    const p = parseCoverObjectPosition(positionStr);
+    setX(p.x);
+    setY(p.y);
+  }, [positionStr]);
+
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <path
-        d="M13.3333 10.6667C12.7811 10.6667 12.2844 10.8978 11.9289 11.2711L5.28 7.58667C5.31556 7.40444 5.33333 7.21778 5.33333 7.02667C5.33333 6.83556 5.31556 6.64889 5.28 6.46667L11.8667 2.81333C12.2311 3.2 12.7467 3.44 13.3333 3.44C14.5689 3.44 15.5556 2.45333 15.5556 1.21778C15.5556 -0.0177778 14.5689 -1 13.3333 -1C12.0978 -1 11.1111 -0.0177778 11.1111 1.21778C11.1111 1.40889 11.1289 1.59556 11.1644 1.77778L4.57778 5.43111C4.21333 5.04444 3.69778 4.80444 3.11111 4.80444C1.87556 4.80444 0.888889 5.79111 0.888889 7.02667C0.888889 8.26222 1.87556 9.24889 3.11111 9.24889C3.69778 9.24889 4.21333 9.00889 4.57778 8.62222L11.2267 12.32C11.1911 12.4844 11.1733 12.6578 11.1733 12.8311C11.1733 14.0311 12.1333 15 13.3333 15C14.5333 15 15.4933 14.0311 15.4933 12.8311C15.4933 11.6311 14.5333 10.6667 13.3333 10.6667Z"
-        fill="#F8F8F8"
-      />
-    </svg>
+    <>
+      <div
+        className="relative h-52 w-full overflow-hidden rounded-md border border-[#30292b] touch-none select-none cursor-grab active:cursor-grabbing"
+        onPointerDown={(e) => {
+          e.preventDefault();
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          dragRef.current = {
+            active: true,
+            sx: e.clientX,
+            sy: e.clientY,
+            ix: x,
+            iy: y,
+          };
+        }}
+        onPointerMove={(e) => {
+          if (!dragRef.current.active) return;
+          const dx = e.clientX - dragRef.current.sx;
+          const dy = e.clientY - dragRef.current.sy;
+          const k = 0.14;
+          setX(
+            Math.min(100, Math.max(0, dragRef.current.ix - dx * k))
+          );
+          setY(
+            Math.min(100, Math.max(0, dragRef.current.iy - dy * k))
+          );
+        }}
+        onPointerUp={(e) => {
+          dragRef.current.active = false;
+          try {
+            (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+          } catch {
+            /* ignore */
+          }
+        }}
+        onPointerCancel={() => {
+          dragRef.current.active = false;
+        }}
+      >
+        <img
+          src={imageSrc}
+          alt=""
+          className="pointer-events-none h-full w-full object-cover"
+          style={{ objectPosition: `${x}% ${y}%` }}
+          draggable={false}
+        />
+      </div>
+      <DialogFooter className="gap-2 sm:justify-end pt-2">
+        <Button
+          type="button"
+          variant="outline"
+          className="border-[#30292b] bg-transparent text-[#f8f8f8]"
+          onClick={onCancel}
+        >
+          Cancelar
+        </Button>
+        <Button
+          type="button"
+          disabled={saving}
+          className="bg-[#ff164c] hover:bg-[#d4103e] text-white disabled:opacity-50"
+          onClick={() => onSave(x, y)}
+        >
+          {saving ? "A guardar…" : "Guardar posição"}
+        </Button>
+      </DialogFooter>
+    </>
   );
 }
 
@@ -80,6 +181,9 @@ export function ProfilePage({
 
   const [bannerImage, setBannerImage] = useState(imgBanner);
   const [avatarImage, setAvatarImage] = useState(imgProfilePhoto);
+  const [coverObjectPosition, setCoverObjectPosition] = useState("50% 50%");
+  const [repositionOpen, setRepositionOpen] = useState(false);
+  const [savingBannerPosition, setSavingBannerPosition] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const publishedTracks = useMemo(() => {
@@ -87,6 +191,15 @@ export function ProfilePage({
     if (isOtherUser) return otherTracks;
     return myPublishedTracks;
   }, [targetId, authUser?.id, isOtherUser, otherTracks, myPublishedTracks]);
+
+  const profileShareUrl = useMemo(() => {
+    if (typeof window === "undefined" || !targetId) return "";
+    const base = `${window.location.origin}${window.location.pathname}`.replace(
+      /\/$/,
+      ""
+    );
+    return `${base || window.location.origin}/?profile=${encodeURIComponent(targetId)}`;
+  }, [targetId]);
 
   const totalDurationLabel = useMemo(() => {
     let sec = 0;
@@ -121,6 +234,8 @@ export function ProfilePage({
         else setBannerImage(imgBanner);
         if (row?.avatar) setAvatarImage(row.avatar);
         else setAvatarImage(imgProfilePhoto);
+        const pos = row?.cover_object_position?.trim();
+        setCoverObjectPosition(pos || "50% 50%");
       })
       .catch(() => {
         if (!cancelled) setProfileError("Não foi possível carregar o perfil.");
@@ -200,7 +315,40 @@ export function ProfilePage({
     if (file) {
       const url = URL.createObjectURL(file);
       setBannerImage(url);
+      setCoverObjectPosition("50% 50%");
     }
+    e.target.value = "";
+  };
+
+  const handleSaveBannerPosition = (x: number, y: number) => {
+    if (!authUser?.id) {
+      toast.error("Inicie sessão para guardar.");
+      return;
+    }
+    const sb = getSupabase();
+    if (!sb) {
+      toast.error("Ligação indisponível.");
+      return;
+    }
+    const formatted = formatCoverObjectPosition(x, y);
+    setSavingBannerPosition(true);
+    void sb
+      .from("users")
+      .update({ cover_object_position: formatted })
+      .eq("id", authUser.id)
+      .then(({ error }) => {
+        if (error) {
+          toast.error(
+            error.message?.trim() ||
+              "Não foi possível guardar a posição do banner. Tente de novo."
+          );
+          return;
+        }
+        setCoverObjectPosition(formatted);
+        setRepositionOpen(false);
+        toast.success("Posição do banner guardada.");
+      })
+      .finally(() => setSavingBannerPosition(false));
   };
 
   const displayName = profile?.name ?? "—";
@@ -231,6 +379,7 @@ export function ProfilePage({
             src={bannerImage}
             alt=""
             className="w-full h-full object-cover pointer-events-none"
+            style={{ objectPosition: coverObjectPosition }}
           />
           <div
             className="absolute inset-0"
@@ -261,15 +410,18 @@ export function ProfilePage({
                   onClick={() => fileInputRef.current?.click()}
                   style={{ cursor: "pointer" }}
                 >
-                  <ImageIcon className="mr-2 h-4 w-4" />
-                  <span>Editar banner</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{ cursor: "pointer" }}
-                >
                   <Upload className="mr-2 h-4 w-4" />
                   <span>Upload nova imagem</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setRepositionOpen(true);
+                  }}
+                  style={{ cursor: "pointer" }}
+                >
+                  <Move className="mr-2 h-4 w-4" />
+                  <span>Reposicionar banner</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -296,7 +448,7 @@ export function ProfilePage({
                 <img
                   src={avatarImage}
                   alt=""
-                  className="w-full h-full object-cover border-4 border-[#0a0608]"
+                  className="w-full h-full object-cover border-4 border-[#ff164c]"
                 />
               </div>
 
@@ -385,18 +537,20 @@ export function ProfilePage({
                 </div>
               ) : null}
 
-              <button
-                type="button"
-                className="relative flex items-center justify-center p-3 cursor-pointer transition-opacity duration-150 hover:opacity-80"
-                aria-label="Compartilhar"
-                style={{ color: "#f8f8f8" }}
+              <ShareChannelsMenu
+                shareTitle={`${displayName} — perfil no AI Music`}
+                shareUrl={profileShareUrl}
+                align="end"
               >
-                <div
-                  className="absolute inset-0 pointer-events-none"
-                  style={{ border: "1px solid #ff164c" }}
-                />
-                <ShareIcon />
-              </button>
+                <button
+                  type="button"
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[#ff164c] text-[#f8f8f8] hover:bg-[#ff164c]/10 transition-opacity duration-150 hover:opacity-90"
+                  aria-label="Partilhar perfil"
+                  title="Partilhar perfil"
+                >
+                  <Share2 className="h-5 w-5" strokeWidth={2} aria-hidden />
+                </button>
+              </ShareChannelsMenu>
             </div>
           </div>
         </div>
@@ -443,6 +597,24 @@ export function ProfilePage({
           )}
         </div>
       </div>
+
+      <Dialog open={repositionOpen} onOpenChange={setRepositionOpen}>
+        <DialogContent className="border-[#30292b] bg-[#24191b] text-[#f8f8f8] sm:max-w-lg [&_[data-slot=dialog-close]]:text-[#f8f8f8]">
+          <DialogHeader>
+            <DialogTitle className="text-[#ebe9e9]">Reposicionar banner</DialogTitle>
+            <DialogDescription className="text-[#bababa] text-sm">
+              Arraste na pré-visualização para mover a imagem para cima, baixo ou os lados.
+            </DialogDescription>
+          </DialogHeader>
+          <BannerRepositionPreview
+            imageSrc={bannerImage}
+            positionStr={coverObjectPosition}
+            saving={savingBannerPosition}
+            onCancel={() => setRepositionOpen(false)}
+            onSave={handleSaveBannerPosition}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

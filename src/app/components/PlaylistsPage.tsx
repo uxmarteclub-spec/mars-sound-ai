@@ -173,7 +173,7 @@ export function PlaylistsPage({ onPlaylistClick }: PlaylistsPageProps) {
 
                     return (
                       <TrackRow
-                        key={track.id}
+                        key={`${track.id}-${index}`}
                         track={track}
                         index={index}
                         isPlaying={isTrackPlaying}

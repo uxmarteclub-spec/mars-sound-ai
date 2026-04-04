@@ -1,6 +1,9 @@
 import { useState } from "react";
+import { toast } from "sonner";
+import { ListMinus } from "lucide-react";
 import { Track } from "../../context/MusicContext";
 import { useFavorites } from "../../context/FavoritesContext";
+import { useLibrary } from "../../context/LibraryContext";
 import { FavoriteButton } from "./FavoriteButton";
 import { AddToPlaylistMenu } from "./AddToPlaylistMenu";
 import {
@@ -39,6 +42,8 @@ interface TrackRowProps {
   showDuration?: boolean;
   showFavorites?: boolean;
   showAddToPlaylist?: boolean;
+  /** Na página da playlist: mostra remover desta lista em vez de adicionar a outra. */
+  playlistContextId?: string;
 }
 
 export function TrackRow({ 
@@ -50,10 +55,15 @@ export function TrackRow({
   showDuration = true,
   showFavorites = true,
   showAddToPlaylist = true,
+  playlistContextId,
 }: TrackRowProps) {
   const { isFavorite: isFav, toggleFavorite } = useFavorites();
+  const { removeTrackFromPlaylist } = useLibrary();
   const [isHovered, setIsHovered] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const favoriteActive = isFav(track.id);
+
+  const showPlaylistActionsCol = Boolean(playlistContextId) || showAddToPlaylist;
 
   return (
     <tr
@@ -133,18 +143,49 @@ export function TrackRow({
         </td>
       )}
 
-      {/* Adicionar à playlist */}
-      {showAddToPlaylist && (
+      {/* Adicionar a outra playlist ou remover desta */}
+      {showPlaylistActionsCol && (
         <td className="px-4 py-4 w-14" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-center">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex">
-                  <AddToPlaylistMenu trackId={track.id} variant="inline" />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top">Adicionar à playlist</TooltipContent>
-            </Tooltip>
+            {playlistContextId ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex">
+                    <button
+                      type="button"
+                      disabled={removing}
+                      className="shrink-0 flex items-center justify-center w-9 h-9 rounded-md text-[#a19a9b] hover:text-[#ff164c] hover:bg-white/5 transition-colors disabled:opacity-40"
+                      title="Remover desta playlist"
+                      aria-label="Remover desta playlist"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRemoving(true);
+                        void removeTrackFromPlaylist(playlistContextId, track.id)
+                          .then(() => {
+                            toast.success("Faixa removida da playlist.");
+                          })
+                          .catch(() => {
+                            toast.error("Não foi possível remover da playlist.");
+                          })
+                          .finally(() => setRemoving(false));
+                      }}
+                    >
+                      <ListMinus className="w-4 h-4" />
+                    </button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top">Remover desta playlist</TooltipContent>
+              </Tooltip>
+            ) : showAddToPlaylist ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex">
+                    <AddToPlaylistMenu trackId={track.id} variant="inline" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top">Adicionar à playlist</TooltipContent>
+              </Tooltip>
+            ) : null}
           </div>
         </td>
       )}
@@ -180,6 +221,7 @@ interface TrackTableHeaderProps {
   showDuration?: boolean;
   showFavorites?: boolean;
   showAddToPlaylist?: boolean;
+  playlistContextId?: string;
 }
 
 export function TrackTableHeader({
@@ -187,7 +229,9 @@ export function TrackTableHeader({
   showDuration = true,
   showFavorites = true,
   showAddToPlaylist = true,
+  playlistContextId,
 }: TrackTableHeaderProps) {
+  const showPlaylistActionsCol = Boolean(playlistContextId) || showAddToPlaylist;
   return (
     <thead>
       <tr style={{ borderBottom: "1px solid #30292b" }}>
@@ -227,13 +271,13 @@ export function TrackTableHeader({
             </span>
           </th>
         )}
-        {showAddToPlaylist && (
+        {showPlaylistActionsCol && (
           <th className="px-4 py-3 text-center w-14">
             <span
               className="font-semibold text-[12px] uppercase tracking-wide"
               style={{ color: "#a19a9b" }}
             >
-              +
+              {playlistContextId ? "Remover" : "+"}
             </span>
           </th>
         )}

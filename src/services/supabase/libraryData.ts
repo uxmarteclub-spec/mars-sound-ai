@@ -196,12 +196,17 @@ export type PublicUserProfileRow = {
   bio: string | null;
   avatar: string | null;
   cover_image: string | null;
+  /** `object-position` do banner; ausente em bases antigas sem migração. */
+  cover_object_position?: string | null;
   total_followers: number;
   total_following: number;
   is_public: boolean;
   favorite_genres: string[];
   favorite_moods: string[];
 };
+
+const USER_PROFILE_BASE_SELECT =
+  "name, username, bio, avatar, cover_image, total_followers, total_following, is_public, favorite_genres, favorite_moods";
 
 /** Perfil público para ecrã de utilizador. */
 export async function fetchUserProfileRow(
@@ -210,13 +215,27 @@ export async function fetchUserProfileRow(
 ): Promise<PublicUserProfileRow | null> {
   const { data, error } = await sb
     .from("users")
-    .select(
-      "name, username, bio, avatar, cover_image, total_followers, total_following, is_public, favorite_genres, favorite_moods"
-    )
+    .select(USER_PROFILE_BASE_SELECT)
     .eq("id", userId)
     .maybeSingle();
   if (error) throw error;
-  return (data as PublicUserProfileRow | null) ?? null;
+  if (!data) return null;
+
+  const row: PublicUserProfileRow = { ...(data as PublicUserProfileRow) };
+
+  const posRes = await sb
+    .from("users")
+    .select("cover_object_position")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (!posRes.error && posRes.data) {
+    const raw = (posRes.data as { cover_object_position?: string | null })
+      .cover_object_position;
+    if (raw !== undefined) row.cover_object_position = raw;
+  }
+
+  return row;
 }
 
 export async function fetchPublishedTracksForUser(
@@ -232,6 +251,19 @@ export async function fetchPublishedTracksForUser(
     .limit(80);
   if (error) throw error;
   return mapTrackRows(data).map(rowToTrack);
+}
+
+export async function removeTrackFromPlaylistRow(
+  sb: SupabaseClient,
+  playlistId: string,
+  trackId: string
+): Promise<void> {
+  const { error } = await sb
+    .from("playlist_tracks")
+    .delete()
+    .eq("playlist_id", playlistId)
+    .eq("track_id", trackId);
+  if (error) throw error;
 }
 
 export async function addTrackToPlaylistRow(
@@ -666,6 +698,36 @@ export async function insertPlaylist(
     .single();
   if (error) throw error;
   return playlistRowToSummary(data as Parameters<typeof playlistRowToSummary>[0]);
+}
+
+const PLAYLIST_COVER_MAX_BYTES = 2 * 1024 * 1024;
+
+export async function uploadPlaylistCoverFile(
+  sb: SupabaseClient,
+  userId: string,
+  playlistId: string,
+  file: File
+): Promise<string> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("O ficheiro deve ser uma imagem.");
+  }
+  if (file.size > PLAYLIST_COVER_MAX_BYTES) {
+    throw new Error("A imagem deve ter no máximo 2 MB.");
+  }
+  const ext =
+    file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") ||
+    "jpg";
+  const safeExt = ext.length <= 5 ? ext : "jpg";
+  const path = `${userId}/${playlistId}-${Date.now()}-cover.${safeExt}`;
+  const { error } = await sb.storage.from("playlist-covers").upload(path, file, {
+    cacheControl: "3600",
+    upsert: false,
+  });
+  if (error) throw error;
+  const {
+    data: { publicUrl },
+  } = sb.storage.from("playlist-covers").getPublicUrl(path);
+  return publicUrl;
 }
 
 export async function updatePlaylistRow(

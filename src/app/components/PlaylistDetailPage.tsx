@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useMusicPlayer, Track } from "../context/MusicContext";
 import { useLibrary } from "../context/LibraryContext";
 import { TrackRow, TrackTableHeader } from "./ui/TrackRow";
+import { ShareChannelsMenu } from "./ui/ShareChannelsMenu";
 import type { Playlist } from "../context/LibraryContext";
 import {
   DropdownMenu,
@@ -10,7 +11,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "./ui/dropdown-menu";
-import { Edit, Trash2 } from "lucide-react";
+import { Edit, Share2, Trash2 } from "lucide-react";
 import { CreatePlaylistModal } from "./CreatePlaylistModal";
 import {
   AlertDialog,
@@ -48,6 +49,17 @@ export function PlaylistDetailPage({
   const title = playlist?.title ?? "Playlist";
   const trackCount = playlist?.trackCount ?? playlistTracks.length;
   const duration = playlist?.duration ?? "—";
+
+  const playlistShareUrl = useMemo(() => {
+    if (typeof window === "undefined" || !playlist) return "";
+    const base = `${window.location.origin}${window.location.pathname}`.replace(/\/$/, "") || window.location.origin;
+    return `${base}/?playlist=${encodeURIComponent(playlist.id)}`;
+  }, [playlist]);
+
+  const playlistShareTitle = useMemo(() => {
+    if (!playlist) return "";
+    return `Playlist «${title}» no AI Music`;
+  }, [playlist, title]);
 
   const confirmDelete = () => {
     if (playlist) {
@@ -157,14 +169,20 @@ export function PlaylistDetailPage({
                 >
                   {title}
                 </h1>
-                <button type="button" className="shrink-0 transition-opacity duration-150 hover:opacity-70">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                    <path
-                      d="M19.3595 14.6672C18.6035 14.6679 17.8589 14.8524 17.19 15.2051C16.5212 15.5577 15.9482 16.0678 15.5205 16.6912L9.01154 13.7522C9.47385 12.6359 9.47565 11.3819 9.01654 10.2642L15.5165 7.31025C16.1504 8.227 17.0919 8.88621 18.1701 9.16829C19.2484 9.45038 20.3921 9.33665 21.3937 8.84775C22.3953 8.35885 23.1885 7.52715 23.6294 6.50351C24.0703 5.47988 24.1297 4.33212 23.7969 3.26842C23.4641 2.20472 22.761 1.29554 21.8153 0.705803C20.8695 0.116061 19.7437 -0.11518 18.6421 0.0540236C17.5405 0.223227 16.5359 0.781668 15.8108 1.62805C15.0856 2.47443 14.6878 3.55269 14.6895 4.66725C14.6938 4.93105 14.7205 5.194 14.7695 5.45325L7.85954 8.59325C7.19588 7.97147 6.36505 7.55709 5.46912 7.40101C4.57318 7.24494 3.65117 7.35396 2.81635 7.71471C1.98153 8.07545 1.27027 8.67218 0.76994 9.43161C0.269611 10.191 0.00200942 11.0801 1.12722e-05 11.9895C-0.00198688 12.8989 0.261705 13.7891 0.758692 14.5507C1.25568 15.3124 1.96432 15.9122 2.79754 16.2766C3.63077 16.641 4.55229 16.7541 5.4489 16.602C6.34551 16.4498 7.17816 16.0391 7.84454 15.4202L14.7725 18.5483C14.7244 18.8073 14.698 19.0698 14.6935 19.3333C14.6933 20.2564 14.9669 21.1588 15.4797 21.9265C15.9924 22.6941 16.7213 23.2924 17.5741 23.6458C18.4269 23.9992 19.3654 24.0917 20.2708 23.9116C21.1762 23.7316 22.0079 23.2871 22.6606 22.6343C23.3134 21.9816 23.7579 21.1499 23.9379 20.2445C24.118 19.3391 24.0255 18.4006 23.6721 17.5478C23.3187 16.695 22.7204 15.9661 21.9528 15.4534C21.1851 14.9406 20.2827 14.6671 19.3595 14.6672Z"
-                      fill="#ff164c"
-                    />
-                  </svg>
-                </button>
+                <ShareChannelsMenu
+                  shareTitle={playlistShareTitle}
+                  shareUrl={playlistShareUrl}
+                  align="start"
+                >
+                  <button
+                    type="button"
+                    className="shrink-0 flex items-center justify-center w-10 h-10 rounded-md border border-[#ff164c]/80 text-[#ff164c] transition-opacity duration-150 hover:opacity-80 hover:bg-[#ff164c]/10"
+                    aria-label="Partilhar playlist"
+                    title="Partilhar playlist"
+                  >
+                    <Share2 className="w-5 h-5" strokeWidth={2} />
+                  </button>
+                </ShareChannelsMenu>
               </div>
 
               <p className="text-[14px] leading-[1.5]" style={{ color: "#bababa" }}>
@@ -182,7 +200,7 @@ export function PlaylistDetailPage({
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
-                <TrackTableHeader />
+                <TrackTableHeader playlistContextId={playlist.id} />
                 <tbody>
                   {playlistTracks.map((track, index) => {
                     const isCurrentTrack = currentTrack?.id === track.id;
@@ -195,6 +213,7 @@ export function PlaylistDetailPage({
                         index={index}
                         isPlaying={isTrackPlaying}
                         onClick={() => playTrack(track, playlistTracks)}
+                        playlistContextId={playlist.id}
                       />
                     );
                   })}
