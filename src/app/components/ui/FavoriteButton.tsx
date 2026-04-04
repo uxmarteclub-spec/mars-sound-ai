@@ -5,6 +5,8 @@ export interface FavoriteButtonProps
   isFavorite: boolean;
   onToggle: () => void;
   size?: "sm" | "md" | "lg";
+  /** Mesmo estilo do botão “playlist” em cards (círculo escuro + ícone claro). */
+  variant?: "default" | "overlay";
   className?: string;
 }
 
@@ -29,6 +31,7 @@ export const FavoriteButton = forwardRef<HTMLButtonElement, FavoriteButtonProps>
       isFavorite,
       onToggle,
       size = "md",
+      variant = "default",
       className = "",
       onClick: propsOnClick,
       type = "button",
@@ -45,7 +48,20 @@ export const FavoriteButton = forwardRef<HTMLButtonElement, FavoriteButtonProps>
       lg: { cls: "w-10 h-10", iconSize: 22 },
     };
 
-    const { cls, iconSize } = sizeMap[size];
+    const isOverlay = variant === "overlay";
+    const { cls, iconSize } = isOverlay
+      ? { cls: "w-9 h-9", iconSize: 16 }
+      : sizeMap[size];
+
+    const overlayCls = isOverlay
+      ? "rounded-full bg-black/70 backdrop-blur-sm hover:bg-black/90 transition-colors"
+      : "";
+
+    const iconColor = isOverlay
+      ? isFavorite
+        ? "#ff164c"
+        : "#f8f8f8"
+      : "#ff164c";
 
     const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
       propsOnClick?.(e);
@@ -61,16 +77,19 @@ export const FavoriteButton = forwardRef<HTMLButtonElement, FavoriteButtonProps>
         type={type}
         {...rest}
         onClick={handleClick}
-        className={`shrink-0 cursor-pointer flex items-center justify-center ${cls} ${className}`}
+        className={`shrink-0 cursor-pointer flex items-center justify-center ${cls} ${overlayCls} ${className}`}
         style={{
-          color: "#ff164c",
+          color: iconColor,
           transform: isAnimating ? "scale(1.3)" : "scale(1)",
-          transition: "transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), color 0.15s",
+          transition:
+            "transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), color 0.15s",
           ...styleProp,
         }}
         aria-label={isFavorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
         aria-pressed={isFavorite}
-      />
+      >
+        <HeartIcon filled={isFavorite} size={iconSize} />
+      </button>
     );
   }
 );

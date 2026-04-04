@@ -211,20 +211,18 @@ function MusicCard({
             onClick={(e) => e.stopPropagation()}
           >
             <AddToPlaylistMenu trackId={track.id} />
-            <div className="bg-black/70 rounded-full p-2 backdrop-blur-sm">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <FavoriteButton
-                    isFavorite={favoriteActive}
-                    onToggle={() => toggleFavorite(track.id)}
-                    size="sm"
-                  />
-                </TooltipTrigger>
-                <TooltipContent side="left">
-                  {favoriteActive ? "Remover dos favoritos" : "Adicionar aos favoritos"}
-                </TooltipContent>
-              </Tooltip>
-            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <FavoriteButton
+                  variant="overlay"
+                  isFavorite={favoriteActive}
+                  onToggle={() => toggleFavorite(track.id)}
+                />
+              </TooltipTrigger>
+              <TooltipContent side="left">
+                {favoriteActive ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+              </TooltipContent>
+            </Tooltip>
           </div>
         ) : null}
       </div>

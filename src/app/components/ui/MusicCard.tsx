@@ -153,25 +153,23 @@ export function MusicCard({
         )}
 
         <div
-          className="absolute top-2 right-2 flex flex-col gap-2 items-end opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+          className="absolute top-3 right-3 flex flex-col gap-2 items-end opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10"
           onClick={(e) => e.stopPropagation()}
         >
           {showPlaylistBtn && <AddToPlaylistMenu trackId={track.id} />}
           {showFavBtn && (
-            <div className="bg-black/70 rounded-full p-2 backdrop-blur-sm">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <FavoriteButton
-                    isFavorite={favoriteActive}
-                    onToggle={handleFavoriteToggle}
-                    size="sm"
-                  />
-                </TooltipTrigger>
-                <TooltipContent side="left">
-                  {favoriteActive ? "Remover dos favoritos" : "Adicionar aos favoritos"}
-                </TooltipContent>
-              </Tooltip>
-            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <FavoriteButton
+                  variant="overlay"
+                  isFavorite={favoriteActive}
+                  onToggle={handleFavoriteToggle}
+                />
+              </TooltipTrigger>
+              <TooltipContent side="left">
+                {favoriteActive ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
       </div>
