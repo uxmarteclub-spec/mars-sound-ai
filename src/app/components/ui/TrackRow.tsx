@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { ListMinus, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import { Track } from "../../context/MusicContext";
@@ -17,6 +17,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "./tooltip";
+
+const rowFocusClass =
+  "outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--color-brand)]";
+
+const iconBtnFocusClass =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--color-bg-base)]";
 
 // ── Equalizer animation bars ──
 function EqualizerBars() {
@@ -73,17 +79,47 @@ export function TrackRow({
   const { removeTrackFromPlaylist } = useLibrary();
   const [isHovered, setIsHovered] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [coarsePointer, setCoarsePointer] = useState(false);
   const favoriteActive = isFav(track.id);
+  const playable = Boolean(track.audioUrl?.trim());
+
+  useEffect(() => {
+    const mq = window.matchMedia("(pointer: coarse)");
+    const apply = () => setCoarsePointer(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
+  const showPlayTriangle = !isPlaying && (isHovered || coarsePointer);
+
+  const handleRowActivate = () => {
+    if (playable) onClick();
+  };
+
+  const rowAriaLabel = playable
+    ? `Reproduzir ${track.title} de ${track.artist}`
+    : `${track.title} de ${track.artist} — áudio indisponível`;
 
   const showPlaylistActionsCol = Boolean(playlistContextId) || showAddToPlaylist;
   const showOwnerMenuCol = Boolean(ownerTrackMenu);
 
   return (
     <tr
-      onClick={onClick}
+      tabIndex={playable ? 0 : -1}
+      aria-label={rowAriaLabel}
+      aria-disabled={!playable}
+      onClick={handleRowActivate}
+      onKeyDown={(e) => {
+        if (!playable) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          handleRowActivate();
+        }
+      }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className="cursor-pointer transition-colors duration-150"
+      className={`transition-colors duration-150 ${rowFocusClass} ${playable ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
       style={{
         backgroundColor: isPlaying ? "rgba(255,22,76,0.08)" : isHovered ? "rgba(255,255,255,0.04)" : "transparent",
         borderBottom: "1px solid #30292b",
@@ -91,11 +127,11 @@ export function TrackRow({
       }}
     >
       {/* # / playing indicator */}
-      <td className="px-4 py-4" style={{ width: "56px" }} title="Reproduzir">
+      <td className="px-4 py-4" style={{ width: "56px" }}>
         <div className="flex items-center justify-center" style={{ width: "24px" }}>
           {isPlaying ? (
             <EqualizerBars />
-          ) : isHovered ? (
+          ) : showPlayTriangle ? (
             <svg width="12" height="14" viewBox="0 0 12 14" fill="none" aria-hidden>
               <path d="M1 1L11 7L1 13V1Z" fill="#ff164c" />
             </svg>
@@ -114,11 +150,7 @@ export function TrackRow({
       <td className="px-4 py-4">
         <div className="flex items-center gap-3">
           <div className="relative shrink-0" style={{ width: "48px", height: "48px" }}>
-            <img
-              src={track.image}
-              alt={track.title}
-              className="w-full h-full object-cover"
-            />
+            <img src={track.image} alt="" className="w-full h-full object-cover" />
             <div
               className="absolute inset-0 pointer-events-none"
               style={{ border: `1px solid ${isPlaying ? "#ff164c" : "#30292b"}` }}
@@ -167,7 +199,7 @@ export function TrackRow({
                     <button
                       type="button"
                       disabled={removing}
-                      className="shrink-0 flex items-center justify-center w-9 h-9 rounded-md text-[#a19a9b] hover:text-[#ff164c] hover:bg-white/5 transition-colors disabled:opacity-40"
+                      className={`shrink-0 flex items-center justify-center w-9 h-9 rounded-md text-[#a19a9b] hover:text-[#ff164c] hover:bg-white/5 transition-colors disabled:opacity-40 ${iconBtnFocusClass}`}
                       title="Remover desta playlist"
                       aria-label="Remover desta playlist"
                       onClick={(e) => {
@@ -232,7 +264,7 @@ export function TrackRow({
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="shrink-0 flex items-center justify-center w-9 h-9 rounded-md text-[#a19a9b] hover:text-[#f8f8f8] hover:bg-white/5 transition-colors"
+                  className={`shrink-0 flex items-center justify-center w-9 h-9 rounded-md text-[#a19a9b] hover:text-[#f8f8f8] hover:bg-white/5 transition-colors ${iconBtnFocusClass}`}
                   title="Opções da faixa"
                   aria-label="Opções da faixa"
                   onClick={(e) => e.stopPropagation()}

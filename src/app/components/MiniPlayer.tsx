@@ -42,10 +42,9 @@ export function MiniPlayer() {
   return (
     /* Sits right above the 60px BottomNav */
     <div
-      className="fixed bottom-[60px] left-0 right-0 z-[90] lg:hidden"
+      className="fixed bottom-[60px] left-0 right-0 z-[90] lg:hidden border-t border-[#30292b]"
       style={{
-        backgroundColor: "#1e1a2e",
-        boxShadow: "0 -1px 0 rgba(255,255,255,0.06)",
+        backgroundColor: "#1c1315",
       }}
     >
       {/* Progress bar — very top edge of the player */}

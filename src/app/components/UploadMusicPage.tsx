@@ -1,8 +1,10 @@
 import { useState, useRef, useCallback, useMemo } from "react";
+import { Link } from "react-router";
 import { toast } from "sonner";
 import svgPaths from "../../imports/svg-r7seo7qk5p";
 import { useLibrary } from "../context/LibraryContext";
 import { GenreCategorySelect } from "./ui/GenreCategorySelect";
+import { Checkbox } from "./ui/checkbox";
 import {
   MUSIC_GENRES_CATALOG,
   mergeGenreNameLists,
@@ -12,14 +14,39 @@ const TAG_SUGGESTIONS = ["Ambient", "Gospel", "Relax", "Energético", "Pop", "Ro
 
 const AI_GENERATORS = ["Suno", "Udio", "Stable Audio", "MusicGen", "AudioCraft", "Outro..."];
 
+const MAX_AUDIO_BYTES = 50 * 1024 * 1024;
+const MAX_COVER_BYTES = 2 * 1024 * 1024;
+
+function validateAudioFile(file: File): string | null {
+  const ext = file.name.toLowerCase();
+  const okType =
+    file.type === "audio/mpeg" ||
+    file.type === "audio/wav" ||
+    file.type === "audio/x-wav" ||
+    ext.endsWith(".mp3") ||
+    ext.endsWith(".wav");
+  if (!okType) return "Usa um ficheiro MP3 ou WAV.";
+  if (file.size > MAX_AUDIO_BYTES) return "O áudio deve ter no máximo 50 MB.";
+  return null;
+}
+
+function validateCoverFile(file: File): string | null {
+  if (file.type !== "image/png" && file.type !== "image/jpeg") {
+    return "A capa deve ser PNG ou JPEG.";
+  }
+  if (file.size > MAX_COVER_BYTES) return "A capa deve ter no máximo 2 MB.";
+  return null;
+}
+
 interface UploadMusicPageProps {
   onCancel?: () => void;
 }
 
 // ── Field error indicator ──
-function FieldError({ message }: { message: string }) {
+function FieldError({ id, message }: { id?: string; message: string }) {
   return (
     <p
+      id={id}
       className="flex items-center gap-1 text-[12px] leading-[1.25] mt-1"
       style={{ color: "#ff164c" }}
     >
@@ -42,7 +69,6 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
 
   // Audio upload
   const [audioFile, setAudioFile] = useState<File | null>(null);
-  const [audioProgress, setAudioProgress] = useState(0);
   const [isDraggingAudio, setIsDraggingAudio] = useState(false);
   const audioInputRef = useRef<HTMLInputElement>(null);
 
@@ -64,7 +90,12 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
   const [agreed, setAgreed] = useState(false);
 
   // Validation errors
-  const [errors, setErrors] = useState<{ audio?: string; title?: string; agreed?: string }>({});
+  const [errors, setErrors] = useState<{
+    audio?: string;
+    cover?: string;
+    title?: string;
+    agreed?: string;
+  }>({});
   const [submitted, setSubmitted] = useState(false);
 
   const uploadGenreOptions = useMemo(
@@ -102,35 +133,40 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
 
   // ── Audio upload handlers ──
   const handleAudioFile = (file: File) => {
+    const err = validateAudioFile(file);
+    if (err) {
+      toast.error(err);
+      return;
+    }
     setAudioFile(file);
     if (errors.audio) setErrors((e) => ({ ...e, audio: undefined }));
-    // Simulate progress
-    setAudioProgress(0);
-    let p = 0;
-    const interval = setInterval(() => {
-      p += Math.random() * 20;
-      if (p >= 100) {
-        p = 100;
-        clearInterval(interval);
-      }
-      setAudioProgress(Math.min(Math.round(p), 100));
-    }, 150);
   };
 
   const handleAudioDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDraggingAudio(false);
     const file = e.dataTransfer.files[0];
-    if (file && (file.type.startsWith("audio/") || file.name.endsWith(".mp3") || file.name.endsWith(".wav"))) {
-      handleAudioFile(file);
+    if (!file) return;
+    const err = validateAudioFile(file);
+    if (err) {
+      toast.error("Formato ou tamanho não suportado. " + err);
+      return;
     }
+    setAudioFile(file);
+    setErrors((er) => ({ ...er, audio: undefined }));
   }, []);
 
   // ── Cover upload handlers ──
   const handleCoverFile = (file: File) => {
+    const err = validateCoverFile(file);
+    if (err) {
+      toast.error(err);
+      return;
+    }
     setCoverFile(file);
+    setErrors((er) => ({ ...er, cover: undefined }));
     const reader = new FileReader();
-    reader.onload = (e) => setCoverPreview(e.target?.result as string);
+    reader.onload = (ev) => setCoverPreview(ev.target?.result as string);
     reader.readAsDataURL(file);
   };
 
@@ -138,9 +174,17 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
     e.preventDefault();
     setIsDraggingCover(false);
     const file = e.dataTransfer.files[0];
-    if (file && (file.type === "image/png" || file.type === "image/jpeg")) {
-      handleCoverFile(file);
+    if (!file) return;
+    const err = validateCoverFile(file);
+    if (err) {
+      toast.error("Formato ou tamanho não suportado. " + err);
+      return;
     }
+    setCoverFile(file);
+    setErrors((er) => ({ ...er, cover: undefined }));
+    const reader = new FileReader();
+    reader.onload = (ev) => setCoverPreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
   }, []);
 
   // ── Tags ──
@@ -164,10 +208,26 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
   };
 
   const validate = () => {
-    const newErrors: { audio?: string; title?: string; agreed?: string } = {};
-    if (!audioFile) newErrors.audio = "Por favor, faça o upload de um arquivo de áudio (MP3 ou WAV até 50MB).";
+    const newErrors: {
+      audio?: string;
+      cover?: string;
+      title?: string;
+      agreed?: string;
+    } = {};
+    if (!audioFile) {
+      newErrors.audio = "Carrega um ficheiro de áudio MP3 ou WAV (até 50 MB).";
+    } else {
+      const aErr = validateAudioFile(audioFile);
+      if (aErr) newErrors.audio = aErr;
+    }
+    if (coverFile) {
+      const cErr = validateCoverFile(coverFile);
+      if (cErr) newErrors.cover = cErr;
+    }
     if (!title.trim()) newErrors.title = "O título da música é obrigatório.";
-    if (!agreed) newErrors.agreed = "Você precisa concordar com os Termos de Uso para continuar.";
+    if (!agreed) {
+      newErrors.agreed = "É necessário aceitar os termos para continuar.";
+    }
     return newErrors;
   };
 
@@ -209,7 +269,8 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
     }
   };
 
-  const hasError = (field: "audio" | "title" | "agreed") => submitted && !!errors[field];
+  const hasError = (field: "audio" | "cover" | "title" | "agreed") =>
+    submitted && !!errors[field];
 
   return (
     <div className="w-full flex justify-center">
@@ -271,25 +332,18 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
                     </div>
 
                     {audioFile ? (
-                      <div className="flex flex-col items-center gap-3 w-full">
-                        <p className="font-bold text-[18px] text-center" style={{ color: "#f8f8f8" }}>
+                      <div className="flex flex-col items-center gap-3 w-full px-2">
+                        <p
+                          className="font-bold text-[18px] text-center break-all max-w-full"
+                          style={{ color: "#f8f8f8" }}
+                        >
                           {audioFile.name}
                         </p>
                         <p className="text-[12px]" style={{ color: "#bababa" }}>
                           {(audioFile.size / 1024 / 1024).toFixed(1)} MB
                         </p>
-                        {/* Progress bar */}
-                        <div className="w-full h-1 rounded-full overflow-hidden" style={{ background: "#5b4f51" }}>
-                          <div
-                            className="h-full rounded-full transition-all duration-300"
-                            style={{
-                              width: `${audioProgress}%`,
-                              background: "linear-gradient(90deg, #ff164c, #ea5858)",
-                            }}
-                          />
-                        </div>
-                        <p className="text-[12px] font-semibold" style={{ color: audioProgress === 100 ? "#ff164c" : "#bababa" }}>
-                          {audioProgress === 100 ? "✓ Arquivo carregado" : `${audioProgress}%`}
+                        <p className="text-[12px] font-semibold" style={{ color: "#ff164c" }}>
+                          Ficheiro selecionado — envia no final do formulário
                         </p>
                       </div>
                     ) : (
@@ -299,10 +353,11 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
                             Carregar áudio
                           </p>
                           <p className="text-[12px] leading-[1.25]" style={{ color: "#bababa" }}>
-                            Mp3, WAV até 50mb
+                            MP3 ou WAV até 50 MB
                           </p>
                         </div>
                         <button
+                          type="button"
                           className="px-[16px] py-[8px] font-semibold text-[16px] leading-[1.5] transition-opacity hover:opacity-90 min-h-[44px]"
                           style={{
                             background: "linear-gradient(90deg, #ff164c 57.214%, #ea5858)",
@@ -310,7 +365,7 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
                           }}
                           onClick={(e) => { e.stopPropagation(); audioInputRef.current?.click(); }}
                         >
-                          Selecionar arquivo
+                          Selecionar ficheiro
                         </button>
                       </>
                     )}
@@ -319,12 +374,18 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
                 </div>
 
                 {/* Cover upload zone */}
+                <div className="flex-1 flex flex-col">
                 <div
                   className={[
                     "flex-1 flex flex-col items-center justify-center gap-4 p-6 cursor-pointer transition-colors duration-200",
                     "min-h-[280px]",
                   ].join(" ")}
-                  style={{ border: `2.694px solid ${isDraggingCover ? "#ff164c" : "#30292b"}` }}
+                  style={{
+                    border: `2.694px solid ${
+                      isDraggingCover ? "#ff164c" : hasError("cover") ? "#ff164c" : "#30292b"
+                    }`,
+                    background: hasError("cover") ? "rgba(255,22,76,0.04)" : "transparent",
+                  }}
                   onDragOver={(e) => { e.preventDefault(); setIsDraggingCover(true); }}
                   onDragLeave={() => setIsDraggingCover(false)}
                   onDrop={handleCoverDrop}
@@ -344,6 +405,7 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
                         <img src={coverPreview} alt="Capa" className="w-full h-full object-cover" />
                       </div>
                       <button
+                        type="button"
                         className="px-[16px] py-[8px] font-semibold text-[14px] leading-[1.5] transition-opacity hover:opacity-90 min-h-[44px]"
                         style={{
                           background: "linear-gradient(90deg, #ff164c 57.214%, #ea5858)",
@@ -370,10 +432,11 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
                           Carregar capa
                         </p>
                         <p className="text-[12px] leading-[1.25]" style={{ color: "#bababa" }}>
-                          PNG, JPEG até 2mb
+                          PNG ou JPEG até 2 MB
                         </p>
                       </div>
                       <button
+                        type="button"
                         className="px-[16px] py-[8px] font-semibold text-[16px] leading-[1.5] transition-opacity hover:opacity-90 min-h-[44px]"
                         style={{
                           background: "linear-gradient(90deg, #ff164c 57.214%, #ea5858)",
@@ -381,10 +444,12 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
                         }}
                         onClick={(e) => { e.stopPropagation(); coverInputRef.current?.click(); }}
                       >
-                        Selecionar arquivo
+                        Selecionar ficheiro
                       </button>
                     </>
                   )}
+                </div>
+                {hasError("cover") && <FieldError message={errors.cover!} />}
                 </div>
 
               </div>
@@ -425,7 +490,7 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
                     aria-describedby={hasError("title") ? "title-error" : undefined}
                   />
                 </div>
-                {hasError("title") && <FieldError message={errors.title!} />}
+                {hasError("title") && <FieldError id="title-error" message={errors.title!} />}
               </div>
 
               {/* Álbum: texto livre na primeira vez; depois escolher existente ou criar novo */}
@@ -566,6 +631,7 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
                     >
                       #{tag}
                       <button
+                        type="button"
                         onClick={() => removeTag(tag)}
                         className="hover:opacity-70 transition-opacity ml-1 min-w-[20px] min-h-[20px] flex items-center justify-center"
                         style={{ color: "#a19a9b" }}
@@ -593,6 +659,7 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
                   </span>
                   {TAG_SUGGESTIONS.filter((s) => !tags.includes(s)).map((suggestion) => (
                     <button
+                      type="button"
                       key={suggestion}
                       onClick={() => addTag(suggestion)}
                       className="flex items-center gap-1 px-2 py-1 text-[13px] font-semibold transition-opacity hover:opacity-80 min-h-[32px]"
@@ -637,39 +704,40 @@ export function UploadMusicPage({ onCancel }: UploadMusicPageProps) {
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 {/* Checkbox */}
                 <div className="flex flex-col gap-1">
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <div
-                      className="w-5 h-5 shrink-0 flex items-center justify-center cursor-pointer transition-colors"
-                      style={{
-                        background: agreed ? "#ff164c" : "#30292b",
-                        border: `1px solid ${agreed ? "#ff164c" : hasError("agreed") ? "#ff164c" : "#5b4f51"}`,
-                        outline: hasError("agreed") ? "1px solid rgba(255,22,76,0.4)" : "none",
-                      }}
-                      onClick={() => {
-                        setAgreed(!agreed);
+                  <div className="flex items-start gap-3">
+                    <Checkbox
+                      id="upload-agreed-terms"
+                      checked={agreed}
+                      onCheckedChange={(v) => {
+                        setAgreed(v === true);
                         if (errors.agreed) setErrors((e) => ({ ...e, agreed: undefined }));
                       }}
+                      aria-invalid={hasError("agreed")}
+                      className="mt-0.5 border-[#5b4f51] data-[state=checked]:bg-[#ff164c] data-[state=checked]:border-[#ff164c]"
+                    />
+                    <label
+                      htmlFor="upload-agreed-terms"
+                      className="text-[12px] leading-[1.4] cursor-pointer select-none"
+                      style={{ color: "#bababa" }}
                     >
-                      {agreed && (
-                        <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-                          <path d="M1 4L3.5 6.5L9 1" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      )}
-                    </div>
-                    <p className="text-[12px] leading-[1.25]" style={{ color: "#bababa" }}>
                       Concordo com os{" "}
-                      <span className="underline cursor-pointer" style={{ color: "#ff164c" }}>Termos de uso</span>{" "}
-                      e{" "}
-                      <span className="underline cursor-pointer" style={{ color: "#ff164c" }}>Políticas de privacidade</span>{" "}
-                      da plataforma. <span style={{ color: "#ff164c" }}>*</span>
-                    </p>
-                  </label>
+                      <Link to="/termos" className="underline text-[#ff164c] hover:opacity-90">
+                        Termos de utilização
+                      </Link>{" "}
+                      e com a{" "}
+                      <Link to="/privacidade" className="underline text-[#ff164c] hover:opacity-90">
+                        Política de privacidade
+                      </Link>
+                      . <span style={{ color: "#ff164c" }}>*</span>
+                    </label>
+                  </div>
                   {hasError("agreed") && <FieldError message={errors.agreed!} />}
                 </div>
 
                 {/* Action buttons */}
                 <div className="flex items-center gap-3 shrink-0">
                   <button
+                    type="button"
                     onClick={onCancel}
                     className="px-4 py-2 font-semibold text-[16px] leading-[1.5] transition-colors hover:bg-white/5 min-h-[44px]"
                     style={{ border: "1px solid #ff164c", color: "#f8f8f8" }}

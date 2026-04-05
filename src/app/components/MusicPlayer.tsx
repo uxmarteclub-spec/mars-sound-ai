@@ -2,6 +2,8 @@ import { useMusicPlayer } from "../context/MusicContext";
 import imgPlayerMusic from "figma:asset/a5fb4564c109688e9da55ace27c2a57ec585d299.png";
 import svgPaths from "../../imports/svg-1rskmayuh7";
 import { FavoriteButton } from "./ui/FavoriteButton";
+import { Slider } from "./ui/slider";
+import { cn } from "./ui/utils";
 import {
   Tooltip,
   TooltipContent,
@@ -75,6 +77,9 @@ function VolumeMutedIcon() {
   );
 }
 
+const sliderTrackStyles =
+  "[&_[data-slot=slider-track]]:h-1 [&_[data-slot=slider-track]]:rounded-none [&_[data-slot=slider-track]]:bg-[#5b4f51] [&_[data-slot=slider-range]]:rounded-none [&_[data-slot=slider-range]]:bg-[#ff164c] [&_[data-slot=slider-thumb]]:size-2.5 [&_[data-slot=slider-thumb]]:border-[#ff164c] [&_[data-slot=slider-thumb]]:bg-[#1c1315]";
+
 export function MusicPlayer() {
   const {
     currentTrack,
@@ -100,18 +105,23 @@ export function MusicPlayer() {
     clearAudioError,
   } = useMusicPlayer();
 
-  const formatTime = (pct: number, duration: number = 392) => {
-    const currentSec = Math.round((pct / 100) * duration);
+  const audioDuration =
+    audioRef.current && Number.isFinite(audioRef.current.duration) && audioRef.current.duration > 0
+      ? audioRef.current.duration
+      : 0;
+
+  const formatTime = (pct: number, durationSec: number) => {
+    if (!durationSec) return "00:00";
+    const currentSec = Math.round((pct / 100) * durationSec);
     const m = Math.floor(currentSec / 60);
     const s = currentSec % 60;
     return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
 
   const getTotalTime = () => {
-    if (audioRef.current && audioRef.current.duration) {
-      const duration = audioRef.current.duration;
-      const m = Math.floor(duration / 60);
-      const s = Math.floor(duration % 60);
+    if (audioDuration) {
+      const m = Math.floor(audioDuration / 60);
+      const s = Math.floor(audioDuration % 60);
       return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
     }
     return "00:00";
@@ -120,43 +130,32 @@ export function MusicPlayer() {
   const displayImage = currentTrack?.image || imgPlayerMusic;
   const displayTitle = currentTrack?.title || "Nada a reproduzir";
   const displayArtist = currentTrack?.artist || "—";
-  const duration = audioRef.current?.duration || 392;
   const displayVolume = isMuted ? 0 : volume;
   const playDisabled = !currentTrack;
 
   return (
     <footer
+      role="region"
+      aria-label="Reprodutor de música"
       className="hidden lg:flex fixed bottom-0 left-0 right-0 z-[100] items-center gap-6 px-[37px] py-3 border-t border-[#30292b]"
       style={{
         backgroundColor: "#1c1315",
         width: "100%",
       }}
     >
-      {/* Track info - Left side */}
       <div className="flex items-center gap-0 shrink-0">
-        <div
-          className="w-16 h-16 shrink-0 border border-[#30292b]"
-        >
-          <img src={displayImage} alt={displayTitle} className="w-full h-full object-cover" />
+        <div className="w-16 h-16 shrink-0 border border-[#30292b]">
+          <img src={displayImage} alt="" className="w-full h-full object-cover" />
         </div>
         <div className="flex flex-col px-[18px] py-3 min-w-[142px]">
-          <p
-            className="font-semibold text-[16px] leading-[1.5] truncate text-[#bababa]"
-          >
+          <p className="font-semibold text-[16px] leading-[1.5] truncate text-[#bababa]">
             {displayTitle}
           </p>
-          <p
-            className="text-[12px] leading-[1.25] text-[#bababa]"
-          >
-            {displayArtist}
-          </p>
+          <p className="text-[12px] leading-[1.25] text-[#bababa]">{displayArtist}</p>
         </div>
         <Tooltip>
           <TooltipTrigger asChild>
-            <FavoriteButton
-              isFavorite={isFavorite}
-              onToggle={toggleFavorite}
-            />
+            <FavoriteButton isFavorite={isFavorite} onToggle={toggleFavorite} />
           </TooltipTrigger>
           <TooltipContent side="top">
             {isFavorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
@@ -164,7 +163,6 @@ export function MusicPlayer() {
         </Tooltip>
       </div>
 
-      {/* Center controls */}
       <div className="flex-1 flex flex-col items-center gap-2 min-w-0">
         {audioError ? (
           <div className="flex items-center gap-2 text-xs text-[#ff8a9a] max-w-full px-2">
@@ -178,7 +176,6 @@ export function MusicPlayer() {
             </button>
           </div>
         ) : null}
-        {/* Buttons */}
         <div className="flex items-center gap-7">
           <button
             type="button"
@@ -192,6 +189,7 @@ export function MusicPlayer() {
           </button>
 
           <button
+            type="button"
             onClick={playPrevious}
             className="cursor-pointer transition-colors duration-150 w-[34px] h-[34px] flex items-center justify-center hover:opacity-80"
             style={{ color: "#a19a9b" }}
@@ -206,11 +204,7 @@ export function MusicPlayer() {
             disabled={playDisabled}
             aria-busy={audioLoading}
             aria-label={
-              audioLoading
-                ? "A carregar áudio"
-                : isPlaying
-                  ? "Pausar"
-                  : "Reproduzir"
+              audioLoading ? "A carregar áudio" : isPlaying ? "Pausar" : "Reproduzir"
             }
             className="w-[43px] h-[43px] flex items-center justify-center cursor-pointer transition-all duration-150 shrink-0 border disabled:opacity-40 disabled:cursor-not-allowed"
             style={{
@@ -229,6 +223,7 @@ export function MusicPlayer() {
           </button>
 
           <button
+            type="button"
             onClick={playNext}
             className="cursor-pointer transition-colors duration-150 w-[34px] h-[34px] flex items-center justify-center hover:opacity-80"
             style={{ color: "#a19a9b" }}
@@ -262,33 +257,24 @@ export function MusicPlayer() {
           </button>
         </div>
 
-        {/* Progress bar */}
         <div className="flex w-full max-w-[752px] items-center gap-[14px]">
           <span
+            className="shrink-0 tabular-nums"
             style={{ color: "#a19a9b", fontSize: "13px", fontFamily: "Raleway, sans-serif", lineHeight: "1.7" }}
           >
-            {formatTime(progress, duration)}
+            {formatTime(progress, audioDuration)}
           </span>
-          <div className="flex-1 relative group">
-            <div
-              className="w-full h-1 cursor-pointer relative transition-all duration-150 group-hover:h-1.5"
-              style={{ backgroundColor: "#5b4f51" }}
-              onClick={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect();
-                const pct = ((e.clientX - rect.left) / rect.width) * 100;
-                setProgress(Math.max(0, Math.min(100, pct)));
-              }}
-            >
-              <div
-                className="h-full absolute left-0 top-0 transition-all duration-150"
-                style={{
-                  backgroundColor: "#ff164c",
-                  width: `${progress}%`,
-                }}
-              />
-            </div>
-          </div>
+          <Slider
+            value={[Math.min(100, Math.max(0, progress))]}
+            max={100}
+            step={0.25}
+            disabled={playDisabled}
+            onValueChange={(v) => setProgress(v[0] ?? 0)}
+            aria-label="Posição na faixa"
+            className={cn("flex-1 min-w-0 py-2", sliderTrackStyles)}
+          />
           <span
+            className="shrink-0 tabular-nums"
             style={{ color: "#a19a9b", fontSize: "13px", fontFamily: "Raleway, sans-serif", lineHeight: "1.7" }}
           >
             {getTotalTime()}
@@ -296,37 +282,28 @@ export function MusicPlayer() {
         </div>
       </div>
 
-      {/* Volume - Right side */}
       <div className="flex items-center gap-2 shrink-0">
-        <button 
+        <button
+          type="button"
           onClick={toggleMute}
+          aria-label={isMuted ? "Ativar som" : "Silenciar"}
           className="w-6 h-6 flex items-center justify-center cursor-pointer transition-colors duration-150 hover:opacity-80"
           style={{ color: isMuted ? "#ff164c" : "#5b4f51" }}
         >
           {displayVolume > 0 ? <VolumeIcon /> : <VolumeMutedIcon />}
         </button>
-        <div className="group">
-          <div
-            className="h-1 cursor-pointer relative w-[105px] transition-all duration-150 group-hover:h-1.5"
-            style={{ backgroundColor: "#5b4f51" }}
-            onClick={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              const pct = ((e.clientX - rect.left) / rect.width) * 100;
-              setVolume(Math.max(0, Math.min(100, pct)));
-              if (isMuted && pct > 0) {
-                toggleMute();
-              }
-            }}
-          >
-            <div
-              className="h-full absolute left-0 top-0 transition-all duration-150"
-              style={{
-                backgroundColor: "#ff164c",
-                width: `${displayVolume}%`,
-              }}
-            />
-          </div>
-        </div>
+        <Slider
+          value={[Math.min(100, Math.max(0, displayVolume))]}
+          max={100}
+          step={1}
+          onValueChange={(v) => {
+            const next = v[0] ?? 0;
+            setVolume(next);
+            if (isMuted && next > 0) toggleMute();
+          }}
+          aria-label="Volume"
+          className={cn("w-[105px] shrink-0 py-2", sliderTrackStyles)}
+        />
       </div>
     </footer>
   );

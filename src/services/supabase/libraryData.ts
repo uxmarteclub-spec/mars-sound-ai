@@ -355,7 +355,7 @@ export type HomeFeedSnapshot = Pick<
   "homeEmAlta" | "homeRecentes" | "homeDestaques" | "homeCreators"
 >;
 
-/** Dados só para a home: pedidos em paralelo e limites baixos. */
+/** Dados só para a home: pedidos em paralelo; limites alinhados ao número de cartões (12). */
 export async function loadHomeFeed(
   sb: SupabaseClient,
   _userId: string
@@ -363,18 +363,22 @@ export async function loadHomeFeed(
   const creatorsPromise = fetchTopCreators(sb, 12).catch(
     () => [] as HomeCreator[]
   );
+  /** Janela curta: ordenação final usa published_at ?? created_at (fallback no cliente). */
+  const HOME_RECENT_FETCH = 24;
+  const HOME_TRENDING_FETCH = 12;
+
   const pubRecentPromise = sb
     .from("tracks")
     .select(TRACK_SELECT)
     .eq("status", "PUBLISHED")
     .order("published_at", { ascending: false, nullsFirst: false })
-    .limit(72);
+    .limit(HOME_RECENT_FETCH);
   const pubTrendingPromise = sb
     .from("tracks")
     .select(TRACK_SELECT)
     .eq("status", "PUBLISHED")
-    .order("play_count", { ascending: false })
-    .limit(72);
+    .order("play_count", { ascending: false, nullsFirst: false })
+    .limit(HOME_TRENDING_FETCH);
   const weekRpcPromise = sb.rpc("get_top_tracks_this_week", {
     limit_param: 12,
   });
@@ -401,10 +405,7 @@ export async function loadHomeFeed(
   });
   const homeRecentes = byRecent.slice(0, 12).map(rowToTrack);
 
-  const byPlay = [...pubTrendingRows].sort(
-    (a, b) => (b.play_count ?? 0) - (a.play_count ?? 0)
-  );
-  const homeEmAlta = byPlay.slice(0, 12).map(rowToTrack);
+  const homeEmAlta = pubTrendingRows.map(rowToTrack);
 
   const weekIds = (weekRpcRes.data ?? []).map(
     (r: { id: string }) => r.id
@@ -425,7 +426,7 @@ export async function loadHomeFeed(
       .map((r) => rowToTrack(r!));
   }
   if (homeDestaques.length === 0) {
-    homeDestaques = byPlay.slice(0, 8).map(rowToTrack);
+    homeDestaques = homeEmAlta.slice(0, 8);
   }
 
   return {
@@ -461,6 +462,42 @@ export async function fetchRecentlyPlayedTracks(
     }
   }
   return out;
+}
+
+export type FavoriteTracksLoadResult = {
+  tracks: Track[];
+  /** Soma dos segundos de `tracks.duration` na BD (para o resumo da página Favoritos). */
+  totalDurationSeconds: number;
+};
+
+/** Favoritos do utilizador com join a `tracks` — ordenado por `created_at` descendente. */
+export async function fetchFavoriteTracksForUser(
+  sb: SupabaseClient,
+  userId: string
+): Promise<FavoriteTracksLoadResult> {
+  const { data, error } = await sb
+    .from("favorites")
+    .select(`created_at, track:tracks(${TRACK_SELECT})`)
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+
+  let totalDurationSeconds = 0;
+  const tracks: Track[] = [];
+
+  for (const row of data ?? []) {
+    const tr = (row as { track: TrackRow | TrackRow[] | null }).track;
+    const single = Array.isArray(tr) ? tr[0] : tr;
+    if (!single?.id || !single.audio_url) continue;
+    const sec =
+      typeof single.duration === "number" && Number.isFinite(single.duration)
+        ? single.duration
+        : 0;
+    totalDurationSeconds += sec;
+    tracks.push(rowToTrack(single as TrackRow));
+  }
+
+  return { tracks, totalDurationSeconds };
 }
 
 /** Descobrir, playlists, histórico e géneros — em paralelo após o feed da home. */

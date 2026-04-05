@@ -380,12 +380,18 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const ordered = shuffleOnRef.current ? shuffleTracks(source) : source;
     const idx = ordered.findIndex((t) => t.id === track.id);
     const startIdx = idx >= 0 ? idx : 0;
+    const toPlay = ordered[startIdx];
+    if (!toPlay?.audioUrl?.trim()) {
+      setAudioError("Esta faixa não tem áudio disponível.");
+      setIsPlaying(false);
+      return;
+    }
     setQueue(ordered);
-    setCurrentTrack(ordered[startIdx]);
+    setCurrentTrack(toPlay);
     setCurrentIndex(startIdx);
     setAudioError(null);
     const el = audioRef.current;
-    el.src = ordered[startIdx].audioUrl;
+    el.src = toPlay.audioUrl;
     el.play().catch(() => {
       setIsPlaying(false);
       setAudioError("Não foi possível reproduzir esta faixa.");
@@ -394,14 +400,14 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     setProgress(0);
     writePersistSnapshot({
       v: 1,
-      track: ordered[startIdx],
+      track: toPlay,
       queue: ordered,
       currentIndex: startIdx,
       positionSeconds: 0,
       volume: volumeRef.current,
       updatedAt: Date.now(),
     });
-    recordPlaybackStarted(ordered[startIdx].id);
+    recordPlaybackStarted(toPlay.id);
   }, [recordPlaybackStarted]);
 
   const togglePlay = useCallback(() => {

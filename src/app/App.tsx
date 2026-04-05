@@ -1,5 +1,17 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import { toast } from "sonner";
+import {
+  Routes,
+  Route,
+  Navigate,
+  Outlet,
+  useNavigate,
+  useParams,
+  useSearchParams,
+  useLocation,
+  useOutletContext,
+} from "react-router";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { LibraryProvider } from "./context/LibraryContext";
 import { FavoritesProvider } from "./context/FavoritesContext";
@@ -10,40 +22,76 @@ import { MusicPlayer } from "./components/MusicPlayer";
 import { MiniPlayer } from "./components/MiniPlayer";
 import { FullScreenMobilePlayer } from "./components/FullScreenMobilePlayer";
 import { HomePage } from "./components/HomePage";
-import { DiscoverPage } from "./components/DiscoverPage";
-import { PlaylistsPage } from "./components/PlaylistsPage";
-import { PlaylistDetailPage } from "./components/PlaylistDetailPage";
-import { FavoritesPage } from "./components/FavoritesPage";
-import { ProfilePage } from "./components/ProfilePage";
-import { SettingsPage } from "./components/SettingsPage";
 import { BottomNav } from "./components/BottomNav";
-import { UploadMusicPage } from "./components/UploadMusicPage";
-import { AuthPage } from "./components/AuthPage";
 import { SupabaseConfigMissing } from "./components/SupabaseConfigMissing";
+import { usePrefersReducedMotion } from "./hooks/usePrefersReducedMotion";
 import { Toaster } from "./components/ui/sonner";
 import { useLibrary, type Playlist } from "./context/LibraryContext";
 import bgImage from "figma:asset/755a0ad35d80d322f261566363a27bca5637a26e.png";
 
-const PAGE_LABELS: Record<string, string> = {
-  descobrir: "Descobrir",
-  playlist: "Playlist",
-  favoritos: "Favoritos",
-  perfil: "Perfil",
-  configuracoes: "Configurações",
-  "carregar-musica": "Carregar Música AI",
+const DiscoverPage = lazy(() =>
+  import("./components/DiscoverPage").then((m) => ({ default: m.DiscoverPage }))
+);
+const PlaylistsPage = lazy(() =>
+  import("./components/PlaylistsPage").then((m) => ({ default: m.PlaylistsPage }))
+);
+const PlaylistDetailPage = lazy(() =>
+  import("./components/PlaylistDetailPage").then((m) => ({
+    default: m.PlaylistDetailPage,
+  }))
+);
+const FavoritesPage = lazy(() =>
+  import("./components/FavoritesPage").then((m) => ({ default: m.FavoritesPage }))
+);
+const ProfilePage = lazy(() =>
+  import("./components/ProfilePage").then((m) => ({ default: m.ProfilePage }))
+);
+const SettingsPage = lazy(() =>
+  import("./components/SettingsPage").then((m) => ({ default: m.SettingsPage }))
+);
+const UploadMusicPage = lazy(() =>
+  import("./components/UploadMusicPage").then((m) => ({ default: m.UploadMusicPage }))
+);
+const AuthPage = lazy(() =>
+  import("./components/AuthPage").then((m) => ({ default: m.AuthPage }))
+);
+
+const NAV_PATHS: Record<string, string> = {
+  inicio: "/inicio",
+  descobrir: "/descobrir",
+  playlist: "/playlists",
+  favoritos: "/favoritos",
+  perfil: "/perfil",
 };
 
-const pageVariants = {
-  initial: { opacity: 0, x: 20 },
-  animate: { opacity: 1, x: 0 },
-  exit: { opacity: 0, x: -20 },
+export type ShellOutletContext = {
+  searchQuery: string;
+  setSearchQuery: (q: string) => void;
 };
 
-const pageTransition = {
-  type: "tween" as const,
-  ease: "easeInOut" as const,
-  duration: 0.3,
-};
+function sidebarIdFromPath(pathname: string): string {
+  if (pathname === "/" || pathname === "/inicio") return "inicio";
+  if (pathname.startsWith("/descobrir")) return "descobrir";
+  if (pathname.startsWith("/playlists")) return "playlist";
+  if (pathname.startsWith("/favoritos")) return "favoritos";
+  if (pathname === "/perfil/publico") return "perfil-publico";
+  if (pathname.startsWith("/perfil")) return "perfil";
+  if (pathname.startsWith("/configuracoes")) return "configuracoes";
+  if (pathname.startsWith("/carregar-musica")) return "carregar-musica";
+  if (pathname.startsWith("/u/")) return "criador-perfil";
+  return "inicio";
+}
+
+function navigateToNavItem(navigate: (to: string) => void, item: string) {
+  const path = NAV_PATHS[item];
+  if (path) navigate(path);
+}
+
+/** Preserva `?profile=` / `?playlist=` ao normalizar `/` → `/inicio`. */
+function IndexToInicioRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={`/inicio${search}`} replace />;
+}
 
 export default function App() {
   return (
@@ -51,6 +99,17 @@ export default function App() {
       <Toaster richColors position="top-center" />
       <AppGate />
     </AuthProvider>
+  );
+}
+
+function RouteFallback() {
+  return (
+    <div
+      className="flex min-h-[50vh] w-full items-center justify-center text-sm"
+      style={{ color: "var(--color-text-muted)" }}
+    >
+      A carregar…
+    </div>
   );
 }
 
@@ -74,17 +133,28 @@ function AppGate() {
 
   if (!isAuthenticated) {
     return (
-      <AnimatePresence>
-        <motion.div
-          key="auth"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.4 }}
-        >
-          <AuthPage />
-        </motion.div>
-      </AnimatePresence>
+      <Suspense
+        fallback={
+          <div
+            className="min-h-screen flex items-center justify-center text-sm"
+            style={{ background: "#1c1315", color: "#a19a9b" }}
+          >
+            A carregar…
+          </div>
+        }
+      >
+        <AnimatePresence>
+          <motion.div
+            key="auth"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            <AuthPage />
+          </motion.div>
+        </AnimatePresence>
+      </Suspense>
     );
   }
 
@@ -92,11 +162,161 @@ function AppGate() {
     <LibraryProvider>
       <FavoritesProvider>
         <MusicProvider>
-          <AuthenticatedShell />
+          <Routes>
+            <Route element={<AuthenticatedShellLayout />}>
+              <Route index element={<IndexToInicioRedirect />} />
+              <Route path="inicio" element={<HomePageRoute />} />
+              <Route path="descobrir" element={<DiscoverPageRoute />} />
+              <Route path="playlists" element={<PlaylistsPageRoute />} />
+              <Route path="playlists/:playlistId" element={<PlaylistDetailRoute />} />
+              <Route path="favoritos" element={<FavoritesPage />} />
+              <Route path="perfil" element={<ProfilePrivateRoute />} />
+              <Route path="perfil/publico" element={<ProfilePage isPublic={true} />} />
+              <Route path="configuracoes" element={<SettingsPageRoute />} />
+              <Route path="carregar-musica" element={<UploadMusicPageRoute />} />
+              <Route path="u/:userId" element={<CreatorProfileRoute />} />
+              <Route path="termos" element={<PlaceholderPage title="Termos de utilização" />} />
+              <Route path="privacidade" element={<PlaceholderPage title="Política de privacidade" />} />
+              <Route path="*" element={<UnknownSectionPlaceholder />} />
+            </Route>
+          </Routes>
         </MusicProvider>
       </FavoritesProvider>
     </LibraryProvider>
   );
+}
+
+function HomePageRoute() {
+  const navigate = useNavigate();
+  return (
+    <HomePage
+      onNavigateToDiscover={() => navigate("/descobrir")}
+      onOpenCreatorProfile={(userId) => navigate(`/u/${userId}`)}
+    />
+  );
+}
+
+function DiscoverPageRoute() {
+  const { searchQuery, setSearchQuery } = useOutletContext<ShellOutletContext>();
+  return (
+    <DiscoverPage searchQuery={searchQuery} onSearchQueryChange={setSearchQuery} />
+  );
+}
+
+function PlaylistsPageRoute() {
+  const navigate = useNavigate();
+  return (
+    <PlaylistsPage onPlaylistClick={(pl) => navigate(`/playlists/${pl.id}`)} />
+  );
+}
+
+function PlaylistDetailRoute() {
+  const { playlistId } = useParams<{ playlistId: string }>();
+  const { playlists, libraryLoading } = useLibrary();
+  const navigate = useNavigate();
+
+  if (libraryLoading) {
+    return <RouteFallback />;
+  }
+  if (!playlistId) {
+    return <Navigate to="/playlists" replace />;
+  }
+  const pl = playlists.find((p) => p.id === playlistId);
+  if (!pl) {
+    return <Navigate to="/playlists" replace />;
+  }
+  return (
+    <PlaylistDetailPage
+      playlist={pl}
+      onBack={() => navigate("/playlists")}
+      onPlaylistDeleted={() => navigate("/playlists")}
+    />
+  );
+}
+
+function SettingsPageRoute() {
+  const { signOut } = useAuth();
+  return <SettingsPage onLogout={() => void signOut()} />;
+}
+
+function UploadMusicPageRoute() {
+  const navigate = useNavigate();
+  return <UploadMusicPage onCancel={() => navigate("/inicio")} />;
+}
+
+function CreatorProfileRoute() {
+  const { userId } = useParams<{ userId: string }>();
+  const navigate = useNavigate();
+  if (!userId?.trim()) {
+    return <Navigate to="/inicio" replace />;
+  }
+  return (
+    <ProfilePage
+      isPublic={true}
+      profileUserId={userId}
+      onBack={() => navigate("/inicio")}
+    />
+  );
+}
+
+function ProfilePrivateRoute() {
+  const navigate = useNavigate();
+  return (
+    <ProfilePage
+      isPublic={false}
+      onEditProfile={() => navigate("/configuracoes")}
+      onViewPublicProfile={() => navigate("/perfil/publico")}
+    />
+  );
+}
+
+function UnknownSectionPlaceholder() {
+  return <PlaceholderPage title="Página não encontrada" />;
+}
+
+function LegacyQueryRedirects() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { playlists, libraryLoading } = useLibrary();
+  const profileHandled = useRef(false);
+  const playlistHandled = useRef(false);
+
+  useEffect(() => {
+    if (profileHandled.current) return;
+    const prid = searchParams.get("profile")?.trim();
+    if (!prid) return;
+    profileHandled.current = true;
+    const uuidRe =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const next = new URLSearchParams(searchParams);
+    next.delete("profile");
+    if (!uuidRe.test(prid)) {
+      toast.error("Link de perfil inválido.");
+      setSearchParams(next, { replace: true });
+      return;
+    }
+    setSearchParams(next, { replace: true });
+    navigate(`/u/${prid}`, { replace: true });
+  }, [searchParams, setSearchParams, navigate]);
+
+  useEffect(() => {
+    if (playlistHandled.current || libraryLoading) return;
+    const pid = searchParams.get("playlist")?.trim();
+    if (!pid) return;
+    playlistHandled.current = true;
+    const next = new URLSearchParams(searchParams);
+    next.delete("playlist");
+    const found = playlists.find((p: Playlist) => p.id === pid);
+    if (found) {
+      setSearchParams(next, { replace: true });
+      navigate(`/playlists/${pid}`, { replace: true });
+    } else {
+      toast.error("Playlist não encontrada nesta conta.");
+      setSearchParams(next, { replace: true });
+    }
+  }, [libraryLoading, playlists, searchParams, setSearchParams, navigate]);
+
+  return null;
 }
 
 function LibraryErrorBanner() {
@@ -119,28 +339,52 @@ function LibraryErrorBanner() {
   );
 }
 
-function AuthenticatedShell() {
-  const { signOut } = useAuth();
-  const [activeNav, setActiveNav] = useState("inicio");
+function AuthenticatedShellLayout() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const prefersReducedMotion = usePrefersReducedMotion();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null);
-  const [browseCreatorId, setBrowseCreatorId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+
+  const activeNav = sidebarIdFromPath(location.pathname);
+
+  const pageVariants = prefersReducedMotion
+    ? {
+        initial: { opacity: 0 },
+        animate: { opacity: 1 },
+        exit: { opacity: 0 },
+      }
+    : {
+        initial: { opacity: 0, x: 20 },
+        animate: { opacity: 1, x: 0 },
+        exit: { opacity: 0, x: -20 },
+      };
+
+  const pageTransition = prefersReducedMotion
+    ? { duration: 0 }
+    : {
+        type: "tween" as const,
+        ease: "easeInOut" as const,
+        duration: 0.3,
+      };
 
   useEffect(() => {
     const id = window.setTimeout(() => {
       if (searchQuery.trim()) {
-        setActiveNav("descobrir");
+        navigate("/descobrir");
       }
     }, 300);
     return () => window.clearTimeout(id);
-  }, [searchQuery]);
+  }, [searchQuery, navigate]);
+
+  const outletContext: ShellOutletContext = { searchQuery, setSearchQuery };
 
   return (
     <div
-      className="h-screen overflow-hidden relative"
+      className="min-h-dvh h-dvh overflow-hidden relative flex flex-col"
       style={{ backgroundColor: "var(--color-bg-base)" }}
     >
+      <LegacyQueryRedirects />
       <div className="fixed inset-0 pointer-events-none z-0">
         <img
           src={bgImage}
@@ -150,190 +394,52 @@ function AuthenticatedShell() {
         />
       </div>
 
-      <div className="flex h-screen relative z-10">
+      <div className="flex flex-1 min-h-0 relative z-10">
         <Sidebar
           activeItem={activeNav}
           onNavChange={(item) => {
-            setActiveNav(item);
+            navigateToNavItem(navigate, item);
             setSidebarOpen(false);
           }}
           mobileOpen={sidebarOpen}
           onMobileClose={() => setSidebarOpen(false)}
+          prefersReducedMotion={prefersReducedMotion}
         />
 
-        <div className="flex flex-col flex-1 h-screen overflow-hidden lg:ml-0">
+        <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden lg:ml-0">
           <Navbar
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
             onMenuToggle={() => setSidebarOpen(true)}
-            onAvatarClick={() => setActiveNav("configuracoes")}
-            onUploadClick={() => setActiveNav("carregar-musica")}
+            onAvatarClick={() => navigate("/configuracoes")}
+            onUploadClick={() => navigate("/carregar-musica")}
           />
 
           <LibraryErrorBanner />
 
-          <div className="flex-1 overflow-y-auto scrollbar-hide pb-[132px] lg:pb-[90px] relative">
-            <AnimatePresence mode="wait">
-              {activeNav === "inicio" ? (
+          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide pb-[132px] lg:pb-[90px] relative">
+            <Suspense fallback={<RouteFallback />}>
+              <AnimatePresence mode="wait">
                 <motion.div
-                  key="inicio"
+                  key={location.pathname}
                   variants={pageVariants}
                   initial="initial"
                   animate="animate"
                   exit="exit"
                   transition={pageTransition}
                 >
-                  <HomePage
-                    onNavigateToDiscover={() => setActiveNav("descobrir")}
-                    onOpenCreatorProfile={(userId) => {
-                      setBrowseCreatorId(userId);
-                      setActiveNav("criador-perfil");
-                    }}
-                  />
+                  <Outlet context={outletContext} />
                 </motion.div>
-              ) : activeNav === "criador-perfil" && browseCreatorId ? (
-                <motion.div
-                  key="criador-perfil"
-                  variants={pageVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={pageTransition}
-                >
-                  <ProfilePage
-                    isPublic={true}
-                    profileUserId={browseCreatorId}
-                    onBack={() => {
-                      setBrowseCreatorId(null);
-                      setActiveNav("inicio");
-                    }}
-                  />
-                </motion.div>
-              ) : activeNav === "descobrir" ? (
-                <motion.div
-                  key="descobrir"
-                  variants={pageVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={pageTransition}
-                >
-                  <DiscoverPage
-                    searchQuery={searchQuery}
-                    onSearchQueryChange={setSearchQuery}
-                  />
-                </motion.div>
-              ) : activeNav === "playlist" ? (
-                <motion.div
-                  key="playlist"
-                  variants={pageVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={pageTransition}
-                >
-                  <PlaylistsPage
-                    onPlaylistClick={(pl) => {
-                      setSelectedPlaylist(pl);
-                      setActiveNav("playlist-detail");
-                    }}
-                  />
-                </motion.div>
-              ) : activeNav === "playlist-detail" ? (
-                <motion.div
-                  key="playlist-detail"
-                  variants={pageVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={pageTransition}
-                >
-                  <PlaylistDetailPage
-                    playlist={selectedPlaylist}
-                    onBack={() => setActiveNav("playlist")}
-                    onPlaylistDeleted={() => {
-                      setSelectedPlaylist(null);
-                      setActiveNav("playlist");
-                    }}
-                  />
-                </motion.div>
-              ) : activeNav === "favoritos" ? (
-                <motion.div
-                  key="favoritos"
-                  variants={pageVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={pageTransition}
-                >
-                  <FavoritesPage />
-                </motion.div>
-              ) : activeNav === "perfil" ? (
-                <motion.div
-                  key="perfil"
-                  variants={pageVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={pageTransition}
-                >
-                  <ProfilePage
-                    isPublic={false}
-                    onEditProfile={() => setActiveNav("configuracoes")}
-                    onViewPublicProfile={() => setActiveNav("perfil-publico")}
-                  />
-                </motion.div>
-              ) : activeNav === "perfil-publico" ? (
-                <motion.div
-                  key="perfil-publico"
-                  variants={pageVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={pageTransition}
-                >
-                  <ProfilePage isPublic={true} />
-                </motion.div>
-              ) : activeNav === "configuracoes" ? (
-                <motion.div
-                  key="configuracoes"
-                  variants={pageVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={pageTransition}
-                >
-                  <SettingsPage onLogout={() => signOut()} />
-                </motion.div>
-              ) : activeNav === "carregar-musica" ? (
-                <motion.div
-                  key="carregar-musica"
-                  variants={pageVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={pageTransition}
-                >
-                  <UploadMusicPage onCancel={() => setActiveNav("inicio")} />
-                </motion.div>
-              ) : (
-                <motion.div
-                  key={activeNav}
-                  variants={pageVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={pageTransition}
-                >
-                  <PlaceholderPage title={PAGE_LABELS[activeNav] ?? activeNav} />
-                </motion.div>
-              )}
-            </AnimatePresence>
+              </AnimatePresence>
+            </Suspense>
           </div>
         </div>
       </div>
 
-      <BottomNav activeItem={activeNav} onNavChange={setActiveNav} />
+      <BottomNav
+        activeItem={activeNav}
+        onNavChange={(item) => navigateToNavItem(navigate, item)}
+      />
       <MusicPlayer />
       <MiniPlayer />
       <FullScreenMobilePlayer />
@@ -370,7 +476,7 @@ function PlaceholderPage({ title }: { title: string }) {
           lineHeight: 1.7,
         }}
       >
-        Esta seção está sendo desenvolvida. Continue explorando a plataforma!
+        Esta secção está em desenvolvimento. Explora o resto da plataforma.
       </p>
     </div>
   );

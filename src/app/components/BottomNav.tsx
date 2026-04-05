@@ -68,6 +68,7 @@ export function BottomNav({ activeItem, onNavChange }: BottomNavProps) {
         return (
           <button
             key={item.id}
+            type="button"
             onClick={() => onNavChange(item.id)}
             className="flex-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-colors duration-150 min-w-[44px]"
             style={{

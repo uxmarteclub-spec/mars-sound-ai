@@ -132,20 +132,25 @@ function MusicCard({
   const isCurrentTrack = currentTrack?.id === track.id;
   const isActive = isCurrentTrack && isPlaying;
 
-  const handleClick = () => {
-    if (track.audioUrl) {
-      playTrack(
-        {
-          id: track.id,
-          title: track.title,
-          artist: track.artist,
-          image: track.image,
-          audioUrl: track.audioUrl,
-        },
-        playQueue
-      );
-    }
+  const playable = Boolean(track.audioUrl);
+
+  const handleActivate = () => {
+    if (!track.audioUrl) return;
+    playTrack(
+      {
+        id: track.id,
+        title: track.title,
+        artist: track.artist,
+        image: track.image,
+        audioUrl: track.audioUrl,
+      },
+      playQueue
+    );
   };
+
+  const cardAriaLabel = playable
+    ? `Reproduzir ${track.title} de ${track.artist}`
+    : `${track.title} de ${track.artist} — áudio indisponível`;
 
   const cardWidth =
     size === "large"
@@ -158,10 +163,21 @@ function MusicCard({
 
   return (
     <article
-      className={`relative flex flex-col snap-start cursor-pointer group ${cardWidth}`}
+      role="button"
+      tabIndex={playable ? 0 : -1}
+      aria-label={cardAriaLabel}
+      aria-disabled={!playable}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onClick={handleClick}
+      onClick={handleActivate}
+      onKeyDown={(e) => {
+        if (!playable) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          handleActivate();
+        }
+      }}
+      className={`relative flex flex-col snap-start group rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--color-bg-base)] ${playable ? "cursor-pointer" : "cursor-not-allowed opacity-80"} ${cardWidth}`}
     >
       {/* Image area */}
       <div
@@ -174,7 +190,7 @@ function MusicCard({
       >
         <img
           src={track.image}
-          alt={track.title}
+          alt=""
           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
           onError={(e) => {
             const target = e.target as HTMLImageElement;
@@ -298,10 +314,7 @@ function SectionHeader({
         <button
           type="button"
           onClick={onVerTudo}
-          className="text-sm transition-colors duration-150 cursor-pointer"
-          style={{ color: "var(--color-text-muted)" }}
-          onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "var(--color-brand)")}
-          onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "var(--color-text-muted)")}
+          className="text-sm shrink-0 rounded-sm px-1 py-0.5 -my-0.5 transition-colors duration-150 cursor-pointer text-[color:var(--color-text-muted)] hover:text-[color:var(--color-brand)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--color-bg-base)]"
         >
           Ver tudo
         </button>
@@ -332,7 +345,7 @@ export function HomePage({
   } = useLibrary();
 
   return (
-    <div className="flex-1 w-full overflow-y-auto scrollbar-hide">
+    <div className="w-full min-h-full">
       <div className="w-full px-4 sm:px-6 lg:px-[37px] py-6 lg:py-[38px] space-y-8 lg:space-y-[38px]">
         {libraryError ? (
           <div

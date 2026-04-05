@@ -1,24 +1,56 @@
-import { useMemo } from "react";
+import { useEffect, useState } from "react";
 import { useMusicPlayer, Track } from "../context/MusicContext";
 import { useFavorites } from "../context/FavoritesContext";
-import { useLibrary } from "../context/LibraryContext";
+import { useAuth } from "../context/AuthContext";
 import { TrackRow, TrackTableHeader } from "./ui/TrackRow";
+import { getSupabase } from "../../lib/supabaseClient";
+import { fetchFavoriteTracksForUser } from "../../services/supabase/libraryData";
+import { formatPlaylistDuration } from "../../services/supabase/mappers";
+
+const focusRing =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--color-bg-base)]";
 
 export function FavoritesPage() {
   const { playTrack, currentTrack, isPlaying } = useMusicPlayer();
   const { favoriteIds } = useFavorites();
-  const { getTrackById, libraryLoading, libraryError, refreshLibrary } = useLibrary();
+  const { user } = useAuth();
+  const [favoriteTracks, setFavoriteTracks] = useState<Track[]>([]);
+  const [totalDurationSeconds, setTotalDurationSeconds] = useState(0);
+  const [pageLoading, setPageLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const favoriteTracks: Track[] = useMemo(() => {
-    return [...favoriteIds]
-      .map((id) => getTrackById(id))
-      .filter((t): t is Track => t !== undefined);
-  }, [favoriteIds, getTrackById]);
+  useEffect(() => {
+    if (!user?.id) {
+      setFavoriteTracks([]);
+      setTotalDurationSeconds(0);
+      setPageLoading(false);
+      setLoadError(null);
+      return;
+    }
+    const sb = getSupabase();
+    if (!sb) {
+      setPageLoading(false);
+      setLoadError("Cliente Supabase indisponível.");
+      return;
+    }
+    setPageLoading(true);
+    setLoadError(null);
+    void fetchFavoriteTracksForUser(sb, user.id)
+      .then(({ tracks, totalDurationSeconds: sec }) => {
+        setFavoriteTracks(tracks);
+        setTotalDurationSeconds(sec);
+      })
+      .catch((e) => {
+        setLoadError(
+          e instanceof Error ? e.message : "Não foi possível carregar os favoritos."
+        );
+        setFavoriteTracks([]);
+        setTotalDurationSeconds(0);
+      })
+      .finally(() => setPageLoading(false));
+  }, [user?.id, favoriteIds]);
 
-  const durationLabel =
-    favoriteTracks.length > 0
-      ? `${Math.max(1, Math.round(favoriteTracks.length * 3.8))} min`
-      : "0 min";
+  const durationLabel = formatPlaylistDuration(totalDurationSeconds);
 
   return (
     <div className="w-full">
@@ -35,24 +67,43 @@ export function FavoritesPage() {
           </p>
         </div>
 
-        {libraryError ? (
+        {loadError ? (
           <div className="rounded-lg border border-[#ff164c]/40 bg-[#ff164c]/10 px-4 py-3 text-sm text-[#f8f8f8] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <span>Não foi possível carregar o catálogo para resolver favoritos.</span>
+            <span>{loadError}</span>
             <button
               type="button"
-              onClick={() => void refreshLibrary()}
-              className="shrink-0 px-3 py-1.5 rounded-md bg-[#ff164c] text-white font-semibold text-xs"
+              onClick={() => {
+                if (!user?.id) return;
+                const sb = getSupabase();
+                if (!sb) return;
+                setPageLoading(true);
+                setLoadError(null);
+                void fetchFavoriteTracksForUser(sb, user.id)
+                  .then(({ tracks, totalDurationSeconds: sec }) => {
+                    setFavoriteTracks(tracks);
+                    setTotalDurationSeconds(sec);
+                  })
+                  .catch((e) => {
+                    setLoadError(
+                      e instanceof Error ? e.message : "Não foi possível carregar os favoritos."
+                    );
+                  })
+                  .finally(() => setPageLoading(false));
+              }}
+              className={`shrink-0 px-3 py-1.5 rounded-md bg-[#ff164c] text-white font-semibold text-xs hover:opacity-90 ${focusRing}`}
             >
               Tentar de novo
             </button>
           </div>
         ) : null}
 
-        {libraryLoading && favoriteIds.size > 0 && favoriteTracks.length === 0 ? (
-          <p className="text-sm text-[#a19a9b]">A carregar músicas…</p>
+        {pageLoading ? (
+          <p className="text-sm text-[#a19a9b]" aria-live="polite">
+            A carregar favoritos…
+          </p>
         ) : null}
 
-        {favoriteTracks.length === 0 ? (
+        {!pageLoading && !loadError && favoriteTracks.length === 0 ? (
           <div
             className="flex flex-col items-center justify-center py-16 px-6 rounded-lg border border-[#30292b]"
             style={{ background: "rgba(255,22,76,0.06)" }}
@@ -64,7 +115,9 @@ export function FavoritesPage() {
               Use o coração nos cards, na descoberta ou no player para adicionar faixas aqui.
             </p>
           </div>
-        ) : (
+        ) : null}
+
+        {!pageLoading && !loadError && favoriteTracks.length > 0 ? (
           <>
             <div
               className="relative overflow-hidden p-6 lg:p-8 flex items-center justify-center"
@@ -83,7 +136,13 @@ export function FavoritesPage() {
               />
 
               <div className="relative flex flex-col items-center gap-4">
-                <svg width="80" height="73" viewBox="0 0 24 21.096" fill="none">
+                <svg
+                  width="80"
+                  height="73"
+                  viewBox="0 0 24 21.096"
+                  fill="none"
+                  aria-hidden="true"
+                >
                   <path
                     d="M17.5048 0C16.3788 0.0175 15.2773 0.3319 14.3116 0.9113C13.3459 1.4907 12.5502 2.3147 12.0048 3.3C11.4595 2.3147 10.6638 1.4907 9.6981 0.9113C8.7324 0.3319 7.6309 0.0175 6.5048 0C4.7098 0.078 3.0186 0.8633 1.8006 2.1842C0.5827 3.5052 -0.063 5.2545 0.0048 7.05C0.0048 11.597 4.7908 16.563 8.8048 19.93C9.7011 20.6831 10.8342 21.096 12.0048 21.096C13.1755 21.096 14.3086 20.6831 15.2048 19.93C19.2188 16.563 24.0048 11.597 24.0048 7.05C24.0726 5.2545 23.427 3.5052 22.2091 2.1842C20.9911 0.8633 19.2999 0.078 17.5048 0Z"
                     fill="#ff164c"
@@ -134,7 +193,7 @@ export function FavoritesPage() {
               </div>
             </section>
           </>
-        )}
+        ) : null}
       </div>
     </div>
   );

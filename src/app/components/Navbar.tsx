@@ -47,6 +47,7 @@ export function Navbar({
       }}
     >
       <button
+        type="button"
         className="lg:hidden shrink-0 flex flex-col gap-1 p-2 min-w-[44px] min-h-[44px] items-center justify-center"
         onClick={onMenuToggle}
         aria-label="Abrir menu"
@@ -66,17 +67,23 @@ export function Navbar({
       </button>
 
       <div className="flex-1 max-w-xl relative">
+        <label htmlFor="navbar-search" className="sr-only">
+          Procurar músicas ou artistas
+        </label>
         <span
           className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
           style={{ color: "var(--color-text-muted)" }}
+          aria-hidden
         >
           <SearchIcon />
         </span>
         <input
+          id="navbar-search"
           type="search"
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
-          placeholder="Buscar músicas ou artistas"
+          placeholder="Procurar músicas ou artistas"
+          aria-label="Procurar músicas ou artistas"
           className="w-full rounded-md pl-9 pr-4 py-2 outline-none transition-all duration-150"
           style={{
             backgroundColor: "var(--color-bg-card)",
@@ -96,6 +103,7 @@ export function Navbar({
 
       <div className="flex items-center gap-3 ml-auto shrink-0">
         <button
+          type="button"
           onClick={onUploadClick}
           className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-md border transition-all duration-150 cursor-pointer min-h-[44px]"
           style={{
@@ -116,6 +124,7 @@ export function Navbar({
         </button>
 
         <button
+          type="button"
           className="w-11 h-11 rounded-full overflow-hidden shrink-0 border-2 cursor-pointer transition-all duration-150"
           style={{ borderColor: "var(--color-border-subtle)" }}
           onClick={onAvatarClick}

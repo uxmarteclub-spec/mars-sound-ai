@@ -53,6 +53,9 @@ import imgProfilePhoto from "figma:asset/2b9669d4caae7e0131df172e452df996b054e84
 const PROFILE_BANNER_MASK_IMAGE =
   "linear-gradient(to bottom, #fff 0%, #fff 38%, rgba(255,255,255,0.55) 62%, rgba(255,255,255,0.12) 88%, rgba(255,255,255,0) 100%)";
 
+const focusRing =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--color-bg-base)]";
+
 function BannerRepositionPreview({
   imageSrc,
   positionStr,
@@ -130,6 +133,43 @@ function BannerRepositionPreview({
           draggable={false}
         />
       </div>
+      <div className="flex flex-col gap-3 py-3 border-t border-[#30292b] mt-2">
+        <p className="text-xs text-[#bababa]">
+          Sem rato: use os controlos para afinar a posição (0% = início, 100% = fim).
+        </p>
+        <label className="flex items-center gap-3 text-sm text-[#f8f8f8]">
+          <span className="w-24 shrink-0 text-[#bababa]">Horizontal</span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={x}
+            onChange={(e) => setX(Number(e.target.value))}
+            className="min-h-9 flex-1 accent-[#ff164c]"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={x}
+            aria-label="Posição horizontal do banner"
+          />
+          <span className="w-10 shrink-0 text-right tabular-nums text-[#bababa]">{x}%</span>
+        </label>
+        <label className="flex items-center gap-3 text-sm text-[#f8f8f8]">
+          <span className="w-24 shrink-0 text-[#bababa]">Vertical</span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={y}
+            onChange={(e) => setY(Number(e.target.value))}
+            className="min-h-9 flex-1 accent-[#ff164c]"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={y}
+            aria-label="Posição vertical do banner"
+          />
+          <span className="w-10 shrink-0 text-right tabular-nums text-[#bababa]">{y}%</span>
+        </label>
+      </div>
       <DialogFooter className="gap-2 sm:justify-end pt-2">
         <Button
           type="button"
@@ -154,7 +194,7 @@ function BannerRepositionPreview({
 
 function DotsVerticalIcon() {
   return (
-    <svg width="4" height="16" viewBox="0 0 4 16" fill="none">
+    <svg width="4" height="16" viewBox="0 0 4 16" fill="none" aria-hidden="true">
       <circle cx="2" cy="2" r="2" fill="#766C6E" />
       <circle cx="2" cy="8" r="2" fill="#766C6E" />
       <circle cx="2" cy="14" r="2" fill="#766C6E" />
@@ -197,6 +237,8 @@ export function ProfilePage({
   const [profileLoading, setProfileLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [otherTracks, setOtherTracks] = useState<Track[]>([]);
+  const [otherTracksLoading, setOtherTracksLoading] = useState(false);
+  const [otherTracksError, setOtherTracksError] = useState<string | null>(null);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
 
@@ -212,6 +254,7 @@ export function ProfilePage({
   );
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [trackEditing, setTrackEditing] = useState<Track | null>(null);
+  const [profileRetryToken, setProfileRetryToken] = useState(0);
 
   const publishedTracks = useMemo(() => {
     if (!targetId || !authUser?.id) return [];
@@ -221,11 +264,7 @@ export function ProfilePage({
 
   const profileShareUrl = useMemo(() => {
     if (typeof window === "undefined" || !targetId) return "";
-    const base = `${window.location.origin}${window.location.pathname}`.replace(
-      /\/$/,
-      ""
-    );
-    return `${base || window.location.origin}/?profile=${encodeURIComponent(targetId)}`;
+    return `${window.location.origin}/u/${encodeURIComponent(targetId)}`;
   }, [targetId]);
 
   const totalDurationLabel = useMemo(() => {
@@ -256,12 +295,17 @@ export function ProfilePage({
     void fetchUserProfileRow(sb, targetId)
       .then((row) => {
         if (cancelled) return;
+        if (!row) {
+          setProfile(null);
+          setProfileError("Perfil não encontrado.");
+          return;
+        }
         setProfile(row);
-        if (row?.cover_image) setBannerImage(row.cover_image);
+        if (row.cover_image) setBannerImage(row.cover_image);
         else setBannerImage(imgBanner);
-        if (row?.avatar) setAvatarImage(row.avatar);
+        if (row.avatar) setAvatarImage(row.avatar);
         else setAvatarImage(imgProfilePhoto);
-        const pos = row?.cover_object_position?.trim();
+        const pos = row.cover_object_position?.trim();
         setCoverObjectPosition(pos || "50% 50%");
       })
       .catch(() => {
@@ -272,17 +316,33 @@ export function ProfilePage({
       });
 
     if (isOtherUser && profileUserId) {
-      void fetchPublishedTracksForUser(sb, profileUserId).then((tracks) => {
-        if (!cancelled) setOtherTracks(tracks);
-      });
+      setOtherTracksLoading(true);
+      setOtherTracksError(null);
+      void fetchPublishedTracksForUser(sb, profileUserId)
+        .then((tracks) => {
+          if (!cancelled) setOtherTracks(tracks);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            const msg = "Não foi possível carregar as músicas deste perfil.";
+            setOtherTracksError(msg);
+            setOtherTracks([]);
+            toast.error(msg);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setOtherTracksLoading(false);
+        });
     } else {
       setOtherTracks([]);
+      setOtherTracksLoading(false);
+      setOtherTracksError(null);
     }
 
     return () => {
       cancelled = true;
     };
-  }, [targetId, isOtherUser, profileUserId]);
+  }, [targetId, isOtherUser, profileUserId, profileRetryToken]);
 
   useEffect(() => {
     if (!isOtherUser || !authUser?.id || !profileUserId) return;
@@ -428,8 +488,19 @@ export function ProfilePage({
 
   if (profileError) {
     return (
-      <div className="w-full px-4 py-12 text-center text-[#ff164c] text-sm">
-        {profileError}
+      <div className="w-full px-4 py-12 flex flex-col items-center gap-4 text-center">
+        <p className="text-[#ff164c] text-sm max-w-md">{profileError}</p>
+        <button
+          type="button"
+          onClick={() => {
+            setProfileError(null);
+            setProfileLoading(true);
+            setProfileRetryToken((n) => n + 1);
+          }}
+          className={`px-4 py-2 rounded-md bg-[#ff164c] text-white text-sm font-semibold hover:opacity-90 ${focusRing}`}
+        >
+          Tentar de novo
+        </button>
       </div>
     );
   }
@@ -441,7 +512,7 @@ export function ProfilePage({
           <button
             type="button"
             onClick={onBack}
-            className="flex items-center gap-2 transition-opacity duration-150 hover:opacity-70 text-[#a19a9b]"
+            className={`flex items-center gap-2 rounded-sm transition-opacity duration-150 hover:opacity-70 text-[#a19a9b] ${focusRing}`}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
               <path
@@ -487,8 +558,9 @@ export function ProfilePage({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
-                  className="absolute top-6 right-6 flex items-center justify-center w-8 h-8 rounded hover:bg-white/10 transition-colors duration-150 z-10"
-                  aria-label="Opções"
+                  type="button"
+                  className={`absolute top-6 right-6 flex items-center justify-center w-8 h-8 rounded-md hover:bg-white/10 transition-colors duration-150 z-10 ${focusRing}`}
+                  aria-label="Opções do banner"
                 >
                   <DotsVerticalIcon />
                 </button>
@@ -601,8 +673,11 @@ export function ProfilePage({
                 <button
                   type="button"
                   disabled={followLoading}
+                  aria-pressed={isFollowing}
+                  aria-busy={followLoading}
+                  aria-label={isFollowing ? "Deixar de seguir este perfil" : "Seguir este perfil"}
                   onClick={handleFollowToggle}
-                  className="flex items-center justify-center px-4 py-2 cursor-pointer transition-opacity duration-150 hover:opacity-90 whitespace-nowrap disabled:opacity-50"
+                  className={`flex items-center justify-center px-4 py-2 rounded-sm cursor-pointer transition-opacity duration-150 hover:opacity-90 whitespace-nowrap disabled:opacity-50 ${focusRing}`}
                   style={{
                     background: isFollowing
                       ? "transparent"
@@ -639,7 +714,7 @@ export function ProfilePage({
               >
                 <button
                   type="button"
-                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[#ff164c] text-[#f8f8f8] hover:bg-[#ff164c]/10 transition-opacity duration-150 hover:opacity-90"
+                  className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[#ff164c] text-[#f8f8f8] hover:bg-[#ff164c]/10 transition-opacity duration-150 hover:opacity-90 ${focusRing}`}
                   aria-label="Partilhar perfil"
                   title="Partilhar perfil"
                 >
@@ -665,7 +740,15 @@ export function ProfilePage({
         </div>
 
         <div className="overflow-x-auto">
-          {publishedTracks.length === 0 ? (
+          {isOtherUser && otherTracksLoading ? (
+            <p className="text-sm text-[#a19a9b] py-8" aria-live="polite">
+              A carregar músicas publicadas…
+            </p>
+          ) : isOtherUser && otherTracksError ? (
+            <p className="text-sm text-[#ff164c] py-8" role="alert">
+              {otherTracksError}
+            </p>
+          ) : publishedTracks.length === 0 ? (
             <p className="text-sm text-[#a19a9b] py-8">
               Nenhuma música publicada neste perfil.
             </p>
@@ -712,7 +795,8 @@ export function ProfilePage({
           <DialogHeader>
             <DialogTitle className="text-[#ebe9e9]">Reposicionar banner</DialogTitle>
             <DialogDescription className="text-[#bababa] text-sm">
-              Arraste na pré-visualização para mover a imagem para cima, baixo ou os lados.
+              Arraste na pré-visualização ou use os controlos abaixo para ajustar a posição do
+              banner.
             </DialogDescription>
           </DialogHeader>
           <BannerRepositionPreview

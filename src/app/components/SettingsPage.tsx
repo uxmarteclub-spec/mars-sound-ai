@@ -1,8 +1,19 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useId } from "react";
 import { toast } from "sonner";
 import { Switch } from "./ui/switch";
 import { CategoryChip } from "./ui/CategoryChip";
 import { Button } from "./ui/button";
+import { Label } from "./ui/label";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "./ui/alert-dialog";
 import { useAuth } from "../context/AuthContext";
 import { useLibrary } from "../context/LibraryContext";
 import { getSupabase } from "../../lib/supabaseClient";
@@ -10,6 +21,8 @@ import {
   fetchUserProfileRow,
   uploadUserAvatar,
 } from "../../services/supabase/libraryData";
+
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
 
 // ─── Sub-components ─────────────────────────────────────────────────
 
@@ -48,17 +61,22 @@ function PictureIcon() {
 
 // Styled input
 function SettingsInput({
+  id,
   placeholder,
   type = "text",
   value,
   onChange,
   defaultValue,
+  ariaLabel,
 }: {
+  id?: string;
   placeholder: string;
   type?: string;
   value?: string;
   onChange?: (v: string) => void;
   defaultValue?: string;
+  /** Acessível quando não há <Label> visível */
+  ariaLabel?: string;
 }) {
   return (
     <div
@@ -66,8 +84,10 @@ function SettingsInput({
       style={{ border: "1px solid #30292b" }}
     >
       <input
+        id={id}
         type={type}
         placeholder={placeholder}
+        aria-label={ariaLabel ?? (id ? undefined : placeholder)}
         {...(value !== undefined
           ? { value, onChange: (e) => onChange?.(e.target.value) }
           : {
@@ -105,7 +125,7 @@ function Panel({ children }: { children: React.ReactNode }) {
 
 const GENRES = [
   "Ambient", "Pop", "Rock", "Gospel", "Samba", "Clássica",
-  "Jazz", "Blues", "Country", "Reggae", "Hip-hop", "Eletronic",
+  "Jazz", "Blues", "Country", "Reggae", "Hip-hop", "Electronic",
   "Metal", "Opera",
 ];
 
@@ -117,6 +137,11 @@ const MOODS = [
 function ProfileTab() {
   const { user, refreshProfile } = useAuth();
   const { refreshLibrary } = useLibrary();
+  const nameFieldId = useId();
+  const usernameFieldId = useId();
+  const bioFieldId = useId();
+  const [profileRetryToken, setProfileRetryToken] = useState(0);
+  const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [displayName, setDisplayName] = useState("");
@@ -134,18 +159,25 @@ function ProfileTab() {
   useEffect(() => {
     if (!user?.id) {
       setProfileLoading(false);
+      setProfileLoadError(null);
       return;
     }
     const sb = getSupabase();
     if (!sb) {
       setProfileLoading(false);
+      setProfileLoadError("Ligação ao servidor indisponível.");
       return;
     }
     let cancelled = false;
     setProfileLoading(true);
+    setProfileLoadError(null);
     void fetchUserProfileRow(sb, user.id)
       .then((row) => {
-        if (cancelled || !row) return;
+        if (cancelled) return;
+        if (!row) {
+          setProfileLoadError("Perfil não encontrado na conta.");
+          return;
+        }
         setDisplayName(row.name ?? "");
         const u = row.username?.trim() ?? "";
         setUsername(u.startsWith("@") ? u : u ? `@${u}` : "");
@@ -166,7 +198,9 @@ function ProfileTab() {
         }
       })
       .catch(() => {
-        toast.error("Não foi possível carregar o perfil da conta.");
+        if (!cancelled) {
+          setProfileLoadError("Não foi possível carregar o perfil da conta.");
+        }
       })
       .finally(() => {
         if (!cancelled) setProfileLoading(false);
@@ -174,7 +208,7 @@ function ProfileTab() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id]);
+  }, [user?.id, profileRetryToken]);
 
   const persistProfile = async () => {
     if (!user?.id) {
@@ -218,10 +252,11 @@ function ProfileTab() {
           URL.revokeObjectURL(localPreviewUrlRef.current);
           localPreviewUrlRef.current = null;
         }
-        setAvatarUrl(newAvatarUrl);
-        void refreshProfile();
-        void refreshLibrary();
+        if (newAvatarUrl) setAvatarUrl(newAvatarUrl);
       }
+
+      void refreshProfile();
+      void refreshLibrary();
 
       toast.success("Perfil guardado na conta.");
     } catch (e) {
@@ -254,6 +289,16 @@ function ProfileTab() {
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Escolhe um ficheiro de imagem (JPEG, PNG, etc.).");
+      e.target.value = "";
+      return;
+    }
+    if (file.size > MAX_AVATAR_BYTES) {
+      toast.error("A imagem deve ter no máximo 5 MB.");
+      e.target.value = "";
+      return;
+    }
     if (localPreviewUrlRef.current) {
       URL.revokeObjectURL(localPreviewUrlRef.current);
       localPreviewUrlRef.current = null;
@@ -273,6 +318,24 @@ function ProfileTab() {
     );
   }
 
+  if (profileLoadError) {
+    return (
+      <div
+        className="flex flex-col items-center gap-4 py-10 px-4 text-center border border-[#30292b] bg-[#24191b]"
+        role="alert"
+      >
+        <p className="text-sm text-[#ebe9e9] max-w-md">{profileLoadError}</p>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setProfileRetryToken((n) => n + 1)}
+        >
+          Tentar novamente
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {/* ── Panel 1: Informações do perfil ── */}
@@ -287,11 +350,11 @@ function ProfileTab() {
           </h2>
         </div>
 
-        {/* Cover + fields */}
+        {/* Foto de perfil + fields */}
         <div className="flex flex-col sm:flex-row gap-6 items-start">
-          {/* Cover upload */}
           <button
             type="button"
+            aria-label="Carregar ou alterar foto de perfil"
             onClick={() => fileInputRef.current?.click()}
             className="relative flex flex-col items-center justify-center gap-3 cursor-pointer transition-opacity duration-150 hover:opacity-80 shrink-0"
             style={{
@@ -304,17 +367,17 @@ function ProfileTab() {
             {avatarUrl ? (
               <img
                 src={avatarUrl}
-                alt="Capa"
+                alt="Foto de perfil"
                 className="w-full h-full object-cover"
               />
             ) : (
               <>
                 <PictureIcon />
                 <span
-                  className="font-semibold text-center"
+                  className="font-semibold text-center px-1 leading-tight"
                   style={{ fontSize: "14px", color: "#f8f8f8" }}
                 >
-                  Capa
+                  Foto perfil
                 </span>
               </>
             )}
@@ -331,34 +394,61 @@ function ProfileTab() {
           <div className="flex flex-col gap-4 flex-1 w-full min-w-0">
             {/* Row: Nome + @username */}
             <div className="flex flex-col sm:flex-row gap-4">
-              <SettingsInput
-                placeholder="Nome do usuário"
-                value={displayName}
-                onChange={setDisplayName}
-              />
-              <SettingsInput
-                placeholder="@username"
-                value={username}
-                onChange={setUsername}
-              />
+              <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+                <Label
+                  htmlFor={nameFieldId}
+                  className="text-[12px] font-semibold uppercase tracking-wide text-[#a19a9b]"
+                >
+                  Nome
+                </Label>
+                <SettingsInput
+                  id={nameFieldId}
+                  placeholder="Nome do utilizador"
+                  value={displayName}
+                  onChange={setDisplayName}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+                <Label
+                  htmlFor={usernameFieldId}
+                  className="text-[12px] font-semibold uppercase tracking-wide text-[#a19a9b]"
+                >
+                  Nome de utilizador
+                </Label>
+                <SettingsInput
+                  id={usernameFieldId}
+                  placeholder="@username"
+                  value={username}
+                  onChange={setUsername}
+                />
+              </div>
             </div>
             {/* Bio textarea */}
-            <div
-              className="relative w-full"
-              style={{ border: "1px solid #30292b" }}
-            >
-              <textarea
-                placeholder="Uma frase para representar seu perfil."
-                rows={3}
-                value={bio}
-                onChange={(e) => setBio(e.target.value)}
-                className="w-full bg-transparent outline-none resize-none px-6 py-2 placeholder-white/20"
-                style={{
-                  color: "#f8f8f8",
-                  fontSize: "14px",
-                  fontWeight: 600,
-                }}
-              />
+            <div className="flex flex-col gap-1.5 w-full">
+              <Label
+                htmlFor={bioFieldId}
+                className="text-[12px] font-semibold uppercase tracking-wide text-[#a19a9b]"
+              >
+                Bio
+              </Label>
+              <div
+                className="relative w-full"
+                style={{ border: "1px solid #30292b" }}
+              >
+                <textarea
+                  id={bioFieldId}
+                  placeholder="Uma frase para representar o teu perfil."
+                  rows={3}
+                  value={bio}
+                  onChange={(e) => setBio(e.target.value)}
+                  className="w-full bg-transparent outline-none resize-none px-6 py-2 placeholder-white/20"
+                  style={{
+                    color: "#f8f8f8",
+                    fontSize: "14px",
+                    fontWeight: 600,
+                  }}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -474,10 +564,47 @@ function ProfileTab() {
 // ─── Account Tab ─────────────────────────────────────────────────────
 
 function AccountTab({ onLogout }: { onLogout?: () => void }) {
-  const { user } = useAuth();
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const { user, signOut } = useAuth();
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const accountEmail = user?.email ?? "";
+
+  async function confirmDeleteAccount() {
+    if (!user?.id) {
+      toast.error("Sessão indisponível.");
+      return;
+    }
+    const sb = getSupabase();
+    if (!sb) {
+      toast.error("Ligação ao servidor indisponível.");
+      return;
+    }
+    setDeleteBusy(true);
+    try {
+      const { error } = await sb.rpc("delete_own_account");
+      if (error) throw error;
+      toast.success("Conta eliminada.");
+      setDeleteOpen(false);
+      await signOut();
+    } catch (e) {
+      const raw =
+        e && typeof e === "object" && "message" in e
+          ? String((e as { message: string }).message)
+          : "";
+      toast.error(
+        raw.includes("not_authenticated")
+          ? "Sessão expirada. Inicia sessão novamente."
+          : raw.includes("Could not find the function") ||
+              raw.includes("delete_own_account") ||
+              raw.includes("42883")
+            ? "Função indisponível na base de dados. Aplica a migração mais recente (delete_own_account) e tenta de novo."
+            : "Não foi possível eliminar a conta. Verifica a ligação ou tenta mais tarde."
+      );
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -567,70 +694,47 @@ function AccountTab({ onLogout }: { onLogout?: () => void }) {
               Excluir permanentemente sua conta e todos os seus dados
             </p>
           </div>
-          <Button
-            variant="outline"
-            onClick={() => setShowDeleteConfirm(true)}
-          >
+          <Button variant="outline" onClick={() => setDeleteOpen(true)}>
             Excluir conta
           </Button>
         </div>
       </Panel>
 
-      {/* ── Delete confirmation modal ── */}
-      {showDeleteConfirm && (
-        <div
-          className="fixed inset-0 z-[200] flex items-center justify-center p-4"
-          style={{ backgroundColor: "rgba(0,0,0,0.7)" }}
-          onClick={() => setShowDeleteConfirm(false)}
-        >
-          <div
-            className="relative w-full max-w-sm flex flex-col gap-6 p-6"
-            style={{ background: "#24191b", border: "1px solid #30292b" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex flex-col gap-2">
-              <h3
-                className="font-bold"
-                style={{ fontSize: "18px", color: "#ebe9e9" }}
-              >
-                Excluir conta permanentemente?
-              </h3>
-              <p style={{ fontSize: "13px", color: "#bababa" }}>
-                Esta ação é irreversível. Todos os seus dados, músicas e
-                playlists serão excluídos permanentemente.
-              </p>
-            </div>
-            <div className="flex gap-3 justify-end">
-              <button
-                type="button"
-                onClick={() => setShowDeleteConfirm(false)}
-                className="px-4 py-2 cursor-pointer"
-                style={{
-                  border: "1px solid #5b4f51",
-                  color: "#a19a9b",
-                  fontSize: "14px",
-                  fontWeight: 600,
-                }}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                className="px-4 py-2 cursor-pointer"
-                style={{
-                  background:
-                    "linear-gradient(to right, #ff164c 57%, #ea5858 100%)",
-                  color: "#f8f8f8",
-                  fontSize: "14px",
-                  fontWeight: 600,
-                }}
-              >
-                Confirmar exclusão
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AlertDialog
+        open={deleteOpen}
+        onOpenChange={(open) => {
+          if (!open && deleteBusy) return;
+          setDeleteOpen(open);
+        }}
+      >
+        <AlertDialogContent className="border-[#30292b] bg-[#24191b] text-[#f8f8f8]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir conta permanentemente?</AlertDialogTitle>
+            <AlertDialogDescription className="text-[#bababa]">
+              Esta ação é irreversível. Todos os teus dados, músicas e playlists
+              serão eliminados. A sessão de autenticação será encerrada.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={deleteBusy}
+              className="border-[#30292b] bg-transparent text-[#f8f8f8]"
+            >
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleteBusy}
+              className="bg-[#ff164c] text-white hover:bg-[#d4103e]"
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmDeleteAccount();
+              }}
+            >
+              {deleteBusy ? "A eliminar…" : "Confirmar exclusão"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -645,6 +749,11 @@ interface SettingsPageProps {
 
 export function SettingsPage({ onLogout }: SettingsPageProps = {}) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("perfil");
+  const tabsPrefix = useId();
+  const tabPerfilId = `${tabsPrefix}-tab-perfil`;
+  const tabContaId = `${tabsPrefix}-tab-conta`;
+  const panelPerfilId = `${tabsPrefix}-panel-perfil`;
+  const panelContaId = `${tabsPrefix}-panel-conta`;
 
   return (
     <div className="w-full min-h-full flex justify-center">
@@ -667,14 +776,25 @@ export function SettingsPage({ onLogout }: SettingsPageProps = {}) {
         </div>
 
         {/* ── Tabs ── */}
-        <div className="flex items-center gap-3 mb-6">
+        <div
+          role="tablist"
+          aria-label="Secções das configurações"
+          className="flex items-center gap-3 mb-6"
+        >
           {(["perfil", "conta"] as SettingsTab[]).map((tab) => {
             const isActive = activeTab === tab;
             const label = tab === "perfil" ? "Perfil" : "Conta";
+            const tabId = tab === "perfil" ? tabPerfilId : tabContaId;
+            const panelId = tab === "perfil" ? panelPerfilId : panelContaId;
             return (
               <button
                 key={tab}
+                id={tabId}
                 type="button"
+                role="tab"
+                aria-selected={isActive}
+                aria-controls={panelId}
+                tabIndex={isActive ? 0 : -1}
                 onClick={() => setActiveTab(tab)}
                 className="relative flex items-center justify-center px-4 py-2 cursor-pointer transition-all duration-150 whitespace-nowrap"
                 style={{
@@ -694,7 +814,22 @@ export function SettingsPage({ onLogout }: SettingsPageProps = {}) {
         </div>
 
         {/* ── Tab content ── */}
-        {activeTab === "perfil" ? <ProfileTab /> : <AccountTab onLogout={onLogout} />}
+        <div
+          id={panelPerfilId}
+          role="tabpanel"
+          aria-labelledby={tabPerfilId}
+          hidden={activeTab !== "perfil"}
+        >
+          {activeTab === "perfil" ? <ProfileTab /> : null}
+        </div>
+        <div
+          id={panelContaId}
+          role="tabpanel"
+          aria-labelledby={tabContaId}
+          hidden={activeTab !== "conta"}
+        >
+          {activeTab === "conta" ? <AccountTab onLogout={onLogout} /> : null}
+        </div>
       </div>
     </div>
   );

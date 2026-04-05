@@ -14,6 +14,24 @@ import {
 } from "../../data/musicGenresCatalog";
 
 const PAGE_SIZE = 16;
+const SEARCH_DEBOUNCE_MS = 300;
+
+function DiscoverGridSkeleton() {
+  return (
+    <div
+      className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-6"
+      aria-hidden="true"
+    >
+      {Array.from({ length: 16 }, (_, i) => (
+        <div key={i} className="flex flex-col gap-3 animate-pulse">
+          <div className="aspect-square w-full rounded-lg bg-white/10" />
+          <div className="h-4 w-4/5 rounded bg-white/10" />
+          <div className="h-3 w-3/5 rounded bg-white/5" />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 interface DiscoverPageProps {
   searchQuery: string;
@@ -82,21 +100,25 @@ export function DiscoverPage({
   }, [discoverTracks]);
 
   useEffect(() => {
-    if (!searchQuery.trim()) {
+    const q = searchQuery.trim();
+    if (!q) {
       setSearchRemote(null);
       setSearchLoading(false);
       return;
     }
     setSearchLoading(true);
     let cancelled = false;
-    void searchPublishedTracks(searchQuery.trim()).then((rows) => {
-      if (!cancelled) {
-        setSearchRemote(rows);
-        setSearchLoading(false);
-      }
-    });
+    const id = window.setTimeout(() => {
+      void searchPublishedTracks(q).then((rows) => {
+        if (!cancelled) {
+          setSearchRemote(rows);
+          setSearchLoading(false);
+        }
+      });
+    }, SEARCH_DEBOUNCE_MS);
     return () => {
       cancelled = true;
+      window.clearTimeout(id);
     };
   }, [searchQuery, searchPublishedTracks]);
 
@@ -141,8 +163,8 @@ export function DiscoverPage({
   );
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-[37px] py-6 lg:py-8">
+    <div className="w-full min-h-full">
+      <div className="px-4 sm:px-6 lg:px-[37px] py-6 lg:py-8">
         <div className="mb-6 lg:mb-8">
           <h1 className="text-2xl sm:text-3xl lg:text-[32px] font-bold text-[var(--color-text-primary)] mb-2">
             Descobrir
@@ -162,8 +184,8 @@ export function DiscoverPage({
               </button>
             </div>
           ) : null}
-          {libraryLoading && discoverTracks.length === 0 ? (
-            <p className="mt-4 text-sm text-[var(--color-text-secondary)]">
+          {libraryLoading && discoverTracks.length === 0 && !hasSearchQuery ? (
+            <p className="mt-4 text-sm text-[var(--color-text-secondary)]" aria-live="polite">
               A carregar músicas…
             </p>
           ) : null}
@@ -239,16 +261,16 @@ export function DiscoverPage({
         {hasSearchQuery ? (
           <div className="space-y-4">
             {searchLoading ? (
-              <p className="text-[var(--color-text-secondary)] text-sm mb-4">
+              <p className="text-[var(--color-text-secondary)] text-sm mb-4" aria-live="polite">
                 A pesquisar na base de dados…
               </p>
-            ) : (
+            ) : filteredTracks.length > 0 ? (
               <p className="text-[var(--color-text-secondary)] text-sm mb-4">
                 {filteredTracks.length} resultado
                 {filteredTracks.length !== 1 ? "s" : ""} encontrado
                 {filteredTracks.length !== 1 ? "s" : ""}
               </p>
-            )}
+            ) : null}
             {filteredTracks.length > 0 ? (
               <div className="space-y-2">
                 {filteredTracks.map((track) => (
@@ -274,6 +296,9 @@ export function DiscoverPage({
           </div>
         ) : (
           <>
+            {libraryLoading && discoverTracks.length === 0 ? (
+              <DiscoverGridSkeleton />
+            ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-6">
               {gridSlice.map((track) => (
                 <MusicCard
@@ -285,6 +310,7 @@ export function DiscoverPage({
                 />
               ))}
             </div>
+            )}
 
             {visibleCount < filteredTracks.length && (
               <div className="flex justify-center pt-10">

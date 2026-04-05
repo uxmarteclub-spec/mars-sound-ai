@@ -17,6 +17,7 @@ export function CategoryChip({
       onClick={onClick}
       className={`
         px-5 py-2 rounded-full text-sm font-semibold transition-all duration-150 whitespace-nowrap
+        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--color-bg-base)]
         ${
           active
             ? "bg-[#ff164c] text-white"

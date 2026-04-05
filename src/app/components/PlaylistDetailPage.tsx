@@ -25,6 +25,9 @@ import {
 } from "./ui/alert-dialog";
 import imgFallback from "figma:asset/48a6e9ae994c060da347e19294ad8e9f9fa5358c.png";
 
+const focusRing =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--color-bg-base)]";
+
 interface PlaylistDetailPageProps {
   playlist?: Playlist | null;
   onBack?: () => void;
@@ -52,8 +55,7 @@ export function PlaylistDetailPage({
 
   const playlistShareUrl = useMemo(() => {
     if (typeof window === "undefined" || !playlist) return "";
-    const base = `${window.location.origin}${window.location.pathname}`.replace(/\/$/, "") || window.location.origin;
-    return `${base}/?playlist=${encodeURIComponent(playlist.id)}`;
+    return `${window.location.origin}/playlists/${encodeURIComponent(playlist.id)}`;
   }, [playlist]);
 
   const playlistShareTitle = useMemo(() => {
@@ -76,7 +78,7 @@ export function PlaylistDetailPage({
           <button
             type="button"
             onClick={onBack}
-            className="flex items-center gap-2 transition-colors duration-150 hover:opacity-70 mb-6"
+            className={`flex items-center gap-2 rounded-sm transition-colors duration-150 hover:opacity-70 mb-6 ${focusRing}`}
             style={{ color: "#a19a9b" }}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -97,7 +99,7 @@ export function PlaylistDetailPage({
           <button
             type="button"
             onClick={onBack}
-            className="flex items-center gap-2 transition-colors duration-150 hover:opacity-70"
+            className={`flex items-center gap-2 rounded-sm transition-colors duration-150 hover:opacity-70 ${focusRing}`}
             style={{ color: "#a19a9b" }}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -112,7 +114,8 @@ export function PlaylistDetailPage({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="absolute top-4 right-4 z-10 flex items-center justify-center w-8 h-8 transition-colors duration-150 hover:bg-white/10 rounded"
+                aria-label="Opções da playlist"
+                className={`absolute top-4 right-4 z-10 flex items-center justify-center w-8 h-8 transition-colors duration-150 hover:bg-white/10 rounded-md ${focusRing}`}
               >
                 <svg width="4" height="16" viewBox="0 0 4 16" fill="none">
                   <circle cx="2" cy="2" r="2" fill="#a19a9b" />
@@ -176,7 +179,7 @@ export function PlaylistDetailPage({
                 >
                   <button
                     type="button"
-                    className="shrink-0 flex items-center justify-center w-10 h-10 rounded-md border border-[#ff164c]/80 text-[#ff164c] transition-opacity duration-150 hover:opacity-80 hover:bg-[#ff164c]/10"
+                    className={`shrink-0 flex items-center justify-center w-10 h-10 rounded-md border border-[#ff164c]/80 text-[#ff164c] transition-opacity duration-150 hover:opacity-80 hover:bg-[#ff164c]/10 ${focusRing}`}
                     aria-label="Partilhar playlist"
                     title="Partilhar playlist"
                   >
