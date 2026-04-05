@@ -224,16 +224,31 @@ function PrimaryButton({
 }
 
 // Google button
-function GoogleButton({ label }: { label: string }) {
+function GoogleButton({
+  label,
+  onClick,
+  disabled,
+  pendingLabel,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  pendingLabel?: string;
+}) {
+  const busy = Boolean(disabled);
   return (
     <button
       type="button"
+      onClick={onClick}
+      disabled={busy}
+      aria-busy={busy}
       style={{
         width: "100%",
         height: "56px",
         background: "#24191b",
         border: "1px solid #5e5e5e",
-        cursor: "pointer",
+        cursor: busy ? "wait" : "pointer",
+        opacity: busy ? 0.75 : 1,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -245,11 +260,15 @@ function GoogleButton({ label }: { label: string }) {
         color: "#f8f8f8",
         transition: "background 0.2s",
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = "#2c1e20")}
-      onMouseLeave={(e) => (e.currentTarget.style.background = "#24191b")}
+      onMouseEnter={(e) => {
+        if (!busy) e.currentTarget.style.background = "#2c1e20";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "#24191b";
+      }}
     >
       <GoogleIcon />
-      {label}
+      {busy && pendingLabel ? pendingLabel : label}
     </button>
   );
 }
@@ -302,10 +321,14 @@ function LoginForm({
   onGoRegister,
   onGoForgot,
   onLogin,
+  onGoogle,
+  googlePending,
 }: {
   onGoRegister: () => void;
   onGoForgot: () => void;
   onLogin: (email: string, password: string) => void;
+  onGoogle: () => void;
+  googlePending: boolean;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -336,7 +359,12 @@ function LoginForm({
       />
       <PrimaryButton type="submit">Entrar</PrimaryButton>
       <OrDivider />
-      <GoogleButton label="Google" />
+      <GoogleButton
+        label="Continuar com Google"
+        pendingLabel="A redirecionar…"
+        disabled={googlePending}
+        onClick={onGoogle}
+      />
       <FooterLink
         text="Não tem uma conta?"
         linkText="Cadastre-se"
@@ -350,9 +378,13 @@ function LoginForm({
 function RegisterForm({
   onGoLogin,
   onRegister,
+  onGoogle,
+  googlePending,
 }: {
   onGoLogin: () => void;
   onRegister: (email: string, password: string, displayName: string) => void;
+  onGoogle: () => void;
+  googlePending: boolean;
 }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -388,7 +420,12 @@ function RegisterForm({
       />
       <PrimaryButton type="submit">Cadastrar</PrimaryButton>
       <OrDivider />
-      <GoogleButton label="Cadastrar com Google" />
+      <GoogleButton
+        label="Cadastrar com Google"
+        pendingLabel="A redirecionar…"
+        disabled={googlePending}
+        onClick={onGoogle}
+      />
       <FooterLink
         text="Já tem uma conta?"
         linkText="Fazer Login"
@@ -633,8 +670,20 @@ export function AuthPage() {
     signUp,
     resetPasswordForEmail,
     updatePassword,
+    signInWithGoogle,
   } = useAuth();
   const [view, setView] = useState<AuthView>("login");
+  const [googlePending, setGooglePending] = useState(false);
+
+  const handleGoogleAuth = () => {
+    setGooglePending(true);
+    void signInWithGoogle().then(({ error }) => {
+      if (error) {
+        setGooglePending(false);
+        toast.error(error.message ?? "Não foi possível iniciar sessão com Google.");
+      }
+    });
+  };
 
   const titles: Record<AuthView, string> = {
     login: "Bem-vindo de volta",
@@ -787,6 +836,8 @@ export function AuthPage() {
                   <LoginForm
                     onGoRegister={() => setView("register")}
                     onGoForgot={() => setView("forgot-request")}
+                    googlePending={googlePending}
+                    onGoogle={handleGoogleAuth}
                     onLogin={(email, password) => {
                       void signInWithPassword(email, password).then(({ error }) => {
                         if (error) {
@@ -811,6 +862,8 @@ export function AuthPage() {
                 >
                   <RegisterForm
                     onGoLogin={() => setView("login")}
+                    googlePending={googlePending}
+                    onGoogle={handleGoogleAuth}
                     onRegister={(email, password, displayName) => {
                       if (password.length < 6) {
                         toast.error("A palavra-passe deve ter pelo menos 6 caracteres.");

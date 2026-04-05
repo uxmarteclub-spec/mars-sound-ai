@@ -38,14 +38,19 @@ interface AuthContextValue {
   signOut: () => Promise<void>;
   resetPasswordForEmail: (email: string) => Promise<{ error: AuthError | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: AuthError | null }>;
+  signInWithGoogle: () => Promise<{ error: AuthError | null }>;
 }
 
 function sessionToUser(session: Session | null): AuthUser | null {
   const u = session?.user;
   if (!u?.email) return null;
-  const meta = u.user_metadata as { name?: string } | undefined;
+  const meta = u.user_metadata as
+    | { name?: string; full_name?: string; given_name?: string }
+    | undefined;
   const displayName =
+    (meta?.full_name && String(meta.full_name).trim()) ||
     (meta?.name && String(meta.name).trim()) ||
+    (meta?.given_name && String(meta.given_name).trim()) ||
     u.email.split("@")[0] ||
     "Utilizador";
   return {
@@ -223,6 +228,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [isBackendConfigured]
   );
 
+  const signInWithGoogle = useCallback(async () => {
+    if (!isBackendConfigured) {
+      return { error: { message: "Supabase não configurado." } as AuthError };
+    }
+    const sb = getSupabase();
+    if (!sb) return { error: { message: "Cliente indisponível" } as AuthError };
+    const redirectTo = `${window.location.origin}/`;
+    const { error } = await sb.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo },
+    });
+    return { error };
+  }, [isBackendConfigured]);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -236,6 +255,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut,
       resetPasswordForEmail,
       updatePassword,
+      signInWithGoogle,
     }),
     [
       user,
@@ -248,6 +268,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut,
       resetPasswordForEmail,
       updatePassword,
+      signInWithGoogle,
     ]
   );
 
