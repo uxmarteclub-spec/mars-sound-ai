@@ -360,7 +360,7 @@ function LoginForm({
       <PrimaryButton type="submit">Entrar</PrimaryButton>
       <OrDivider />
       <GoogleButton
-        label="Continuar com Google"
+        label="Google"
         pendingLabel="A redirecionar…"
         disabled={googlePending}
         onClick={onGoogle}
